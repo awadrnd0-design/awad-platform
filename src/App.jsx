@@ -1,271 +1,399 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
-// ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
-const GS = () => (
+// ─── SUPABASE ────────────────────────────────────────────────────────
+const SB_URL = "https://nxyhstdngyjylryiqzvx.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54eWhzdGRuZ3lqeWxyeWlxenZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MzE4MjksImV4cCI6MjA4ODUwNzgyOX0.voN8i_soAdtoO-BnXwC_qJ4zqqnMo_B__ieREqiHilc";
+const H = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` };
+
+const db = {
+  get: (t, f = {}) => {
+    let u = `${SB_URL}/rest/v1/${t}?select=*`;
+    Object.entries(f).forEach(([k, v]) => { u += `&${k}=eq.${encodeURIComponent(v)}`; });
+    return fetch(u, { headers: H }).then(r => r.json());
+  },
+  insert: (t, d) => fetch(`${SB_URL}/rest/v1/${t}`, {
+    method: "POST",
+    headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(d)
+  }).then(r => r.json()),
+  update: (t, id, d) => fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(d)
+  }).then(r => r.json()),
+  updateWhere: (t, field, val, d) => fetch(`${SB_URL}/rest/v1/${t}?${field}=eq.${encodeURIComponent(val)}`, {
+    method: "PATCH",
+    headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(d)
+  }).then(r => r.json()),
+  del: (t, id) => fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`, { method: "DELETE", headers: H }),
+};
+
+// ─── CODE GENERATOR ──────────────────────────────────────────────────
+const generateCode = () => {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return `${seg()}-${seg()}-${seg()}`;
+};
+
+// ─── THEME ───────────────────────────────────────────────────────────
+const useDark = () => {
+  const [d, setD] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const h = e => setD(e.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  return d;
+};
+
+const mk = dark => ({
+  bg:       dark ? "#000000" : "#ffffff",
+  bg2:      dark ? "#1c1c1e" : "#f5f5f7",
+  bg3:      dark ? "#2c2c2e" : "#e8e8ed",
+  card:     dark ? "#1c1c1e" : "#ffffff",
+  cardBdr:  dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+  sep:      dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
+  text:     dark ? "#f5f5f7" : "#1d1d1f",
+  sub:      dark ? "#98989d" : "#6e6e73",
+  muted:    dark ? "#48484a" : "#d1d1d6",
+  blue:     dark ? "#0a84ff" : "#0071e3",
+  blueBg:   dark ? "rgba(10,132,255,0.1)" : "rgba(0,113,227,0.07)",
+  green:    dark ? "#30d158" : "#1d8348",
+  greenBg:  dark ? "rgba(48,209,88,0.1)" : "rgba(29,131,72,0.07)",
+  red:      dark ? "#ff453a" : "#d70015",
+  redBg:    dark ? "rgba(255,69,58,0.1)" : "rgba(215,0,21,0.06)",
+  orange:   dark ? "#ff9f0a" : "#bf5af2",
+  shadow:   dark ? "0 1px 0 rgba(255,255,255,0.06), 0 4px 16px rgba(0,0,0,0.5)" : "0 1px 0 rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.08)",
+  shadowLg: dark ? "0 8px 40px rgba(0,0,0,0.7)" : "0 8px 40px rgba(0,0,0,0.12)",
+});
+
+// ─── GLOBAL STYLES ───────────────────────────────────────────────────
+const GS = ({ dark }) => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #080809; font-family: 'IBM Plex Sans', sans-serif; }
-    ::-webkit-scrollbar { width: 3px; }
-    ::-webkit-scrollbar-track { background: #0e0e10; }
-    ::-webkit-scrollbar-thumb { background: #2a2a30; border-radius: 2px; }
+    html { color-scheme: ${dark ? "dark" : "light"}; }
+    body {
+      background: ${dark ? "#000" : "#fff"};
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      font-size: 17px;
+      line-height: 1.47059;
+      letter-spacing: -0.022em;
+    }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: ${dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.12)"}; border-radius: 4px; }
+    input, button, textarea { font-family: inherit; letter-spacing: inherit; }
     input:focus, textarea:focus { outline: none; }
-    button { cursor: pointer; font-family: 'IBM Plex Sans', sans-serif; }
-    @keyframes fadeUp   { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
-    @keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
-    @keyframes scaleIn  { from { opacity:0; transform:scale(0.95) } to { opacity:1; transform:scale(1) } }
-    @keyframes shimmer  { 0%,100% { opacity:.4 } 50% { opacity:1 } }
-    @keyframes spin     { to { transform:rotate(360deg) } }
-    @keyframes pulse    { 0%,100% { opacity:1 } 50% { opacity:.3 } }
-    @keyframes slideR   { from { opacity:0; transform:translateX(30px) } to { opacity:1; transform:translateX(0) } }
-    @keyframes glow     { 0%,100% { box-shadow:0 0 20px rgba(212,175,55,0.15) } 50% { box-shadow:0 0 40px rgba(212,175,55,0.35) } }
+    button { cursor: pointer; }
+    ::selection { background: rgba(0,113,227,0.2); }
+    a { color: inherit; text-decoration: none; }
+
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   `}</style>
 );
 
-// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
-const T = {
-  bg:      "#080809",
-  surface: "#0e0e11",
-  card:    "#121215",
-  raised:  "#171719",
-  border:  "#1f1f24",
-  borderHi:"#2e2e35",
-  gold:    "#d4af37",
-  goldDim: "rgba(212,175,55,0.1)",
-  goldBdr: "rgba(212,175,55,0.22)",
-  text:    "#eeeef0",
-  soft:    "#9898a8",
-  muted:   "#5a5a68",
-  success: "#22c55e",
-  error:   "#ef4444",
-  warn:    "#f59e0b",
-  info:    "#3b82f6",
-};
+// ─── COMPONENTS ──────────────────────────────────────────────────────
 
-const F = {
-  display: "'Cormorant Garamond', serif",
-  body:    "'IBM Plex Sans', sans-serif",
-  mono:    "'IBM Plex Mono', monospace",
-};
-
-// ─── MOCK DATA ────────────────────────────────────────────────────────────────
-const INIT = {
-  admin: { email: "admin@awad.com", password: "awad2024", name: "Awad" },
-  courses: [
-    {
-      id: 1, title: "Leadership Mastery", category: "Leadership",
-      description: "Develop the mindset and skills of exceptional leaders.", color: "#d4af37",
-      chapters: [
-        { id: 1, title: "Foundations of Leadership", lessons: [
-          { id: 1, title: "What Makes a True Leader", duration: "14:22" },
-          { id: 2, title: "The Leadership Mindset", duration: "19:08" },
-        ], quiz: { id: 1, title: "Chapter 1 Assessment", questions: [
-          { id: 1, text: "What is the most important trait of a great leader?", options: ["Authority","Empathy","Wealth","Popularity"], answer: 1 },
-          { id: 2, text: "Leadership is primarily about:", options: ["Giving orders","Inspiring others","Managing tasks","Being feared"], answer: 1 },
-        ]}},
-        { id: 2, title: "Communication & Influence", lessons: [
-          { id: 3, title: "The Art of Persuasion", duration: "22:45" },
-          { id: 4, title: "Public Speaking Mastery", duration: "28:30" },
-        ], quiz: { id: 2, title: "Chapter 2 Assessment", questions: [
-          { id: 3, text: "Effective communication starts with:", options: ["Talking","Listening","Writing","Reading"], answer: 1 },
-        ]}},
-      ],
-    },
-    {
-      id: 2, title: "Financial Intelligence", category: "Finance",
-      description: "Master money, investments, and financial freedom.", color: "#22c55e",
-      chapters: [
-        { id: 3, title: "Money Fundamentals", lessons: [
-          { id: 5, title: "How Money Really Works", duration: "17:00" },
-          { id: 6, title: "Budgeting for Success", duration: "21:15" },
-        ], quiz: { id: 3, title: "Chapter 1 Assessment", questions: [
-          { id: 4, text: "The first step to financial freedom is:", options: ["Earning more","Spending less","Saving consistently","Investing everything"], answer: 2 },
-        ]}},
-      ],
-    },
-    {
-      id: 3, title: "Entrepreneurship Bootcamp", category: "Business",
-      description: "From idea to thriving business — the complete guide.", color: "#3b82f6",
-      chapters: [
-        { id: 4, title: "Building Your Vision", lessons: [
-          { id: 7, title: "Finding Your Business Idea", duration: "16:40" },
-          { id: 8, title: "Validating Your Market", duration: "24:10" },
-        ], quiz: { id: 4, title: "Chapter 1 Assessment", questions: [
-          { id: 5, text: "Before starting a business you must:", options: ["Quit your job","Validate your idea","Build a website","Register a company"], answer: 1 },
-        ]}},
-      ],
-    },
-  ],
-  students: [
-    { id: 1, name: "Sarah Mitchell", email: "sarah@example.com", password: "1234", status: "active", enrolledCourses: [1, 2], joinDate: "2024-10-15",
-      progress: { 1: { watched: [1, 2], quizScores: { 1: 100 }, completed: false }, 2: { watched: [5], quizScores: {}, completed: false } } },
-    { id: 2, name: "Omar Hassan", email: "omar@example.com", password: "1234", status: "active", enrolledCourses: [1, 3], joinDate: "2024-11-02",
-      progress: { 1: { watched: [1], quizScores: {}, completed: false }, 3: { watched: [7, 8], quizScores: { 4: 80 }, completed: false } } },
-    { id: 3, name: "Priya Sharma", email: "priya@example.com", password: "1234", status: "pending", enrolledCourses: [], joinDate: "2025-01-20", progress: {} },
-  ],
-};
-
-// ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
-const Badge = ({ color = T.gold, children, sm }) => (
-  <span style={{
-    background: color + "18", border: `1px solid ${color}40`,
-    color, borderRadius: 5, padding: sm ? "2px 7px" : "4px 11px",
-    fontSize: sm ? 9 : 11, fontFamily: F.mono, fontWeight: 500,
-    letterSpacing: 1, whiteSpace: "nowrap", textTransform: "uppercase",
-  }}>{children}</span>
+const Spinner = ({ size = 20, color }) => (
+  <div style={{ width: size, height: size, border: `2px solid rgba(128,128,128,0.2)`, borderTopColor: color || "#0071e3", borderRadius: "50%", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
 );
 
-const Pill = ({ value, color = T.gold, height = 5 }) => (
-  <div style={{ height, background: T.border, borderRadius: height, overflow: "hidden" }}>
-    <div style={{ width: `${Math.min(100, Math.max(0, value))}%`, height: "100%", background: color, borderRadius: height, transition: "width 0.6s ease" }} />
-  </div>
-);
-
-const Av = ({ name, size = 36, color }) => {
-  const palette = [T.gold, "#22c55e", "#3b82f6", "#a855f7", "#ef4444", "#f59e0b"];
-  const c = color || palette[(name?.charCodeAt(0) || 0) % palette.length];
-  return (
-    <div style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, background: c + "1a", border: `1.5px solid ${c}44`, display: "flex", alignItems: "center", justifyContent: "center", color: c, fontFamily: F.display, fontWeight: 700, fontSize: size * 0.42 }}>
-      {name?.[0]?.toUpperCase()}
-    </div>
-  );
-};
-
-const Btn = ({ children, onClick, variant = "primary", sm, disabled, full, style: sx }) => {
+const Btn = ({ children, onClick, disabled, full, sm, variant = "primary", t }) => {
   const [hov, setHov] = useState(false);
-  const v = {
-    primary: { bg: hov ? "#e8c84a" : T.gold, color: "#080809", border: "none" },
-    ghost:   { bg: hov ? T.raised : "transparent", color: T.text, border: `1px solid ${T.border}` },
-    danger:  { bg: hov ? "#dc2626" : "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)" },
-    success: { bg: hov ? "#16a34a" : "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.25)" },
-    outline: { bg: hov ? T.goldDim : "transparent", color: T.gold, border: `1px solid ${T.goldBdr}` },
+  const styles = {
+    primary: { bg: hov ? (t.blue === "#0071e3" ? "#0077ed" : "#0a84ff") : t.blue, color: "#fff", border: "none" },
+    secondary: { bg: hov ? t.bg3 : t.bg2, color: t.text, border: `1px solid ${t.sep}` },
+    danger: { bg: hov ? t.redBg : "transparent", color: t.red, border: `1px solid ${t.red}30` },
+    ghost: { bg: hov ? t.bg2 : "transparent", color: t.sub, border: "none" },
   }[variant];
   return (
-    <button onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+    <button
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       onClick={onClick} disabled={disabled}
-      style={{ ...v, borderRadius: 10, padding: sm ? "7px 15px" : "12px 24px", fontSize: sm ? 12 : 14, fontWeight: 600, transition: "all 0.18s", letterSpacing: 0.3, opacity: disabled ? 0.45 : 1, cursor: disabled ? "not-allowed" : "pointer", width: full ? "100%" : "auto", ...(sx || {}) }}>
+      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: styles.bg, color: styles.color, border: styles.border || "none", borderRadius: sm ? 8 : 12, padding: sm ? "6px 14px" : "12px 22px", fontSize: sm ? 13 : 15, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, transition: "all 0.15s", width: full ? "100%" : "auto", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
       {children}
     </button>
   );
 };
 
-const Inp = ({ label, value, onChange, type = "text", placeholder, sx }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-    {label && <label style={{ color: T.soft, fontSize: 11, fontFamily: F.mono, letterSpacing: 1 }}>{label.toUpperCase()}</label>}
-    <input type={type} value={value} onChange={onChange} placeholder={placeholder}
-      style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "12px 15px", color: T.text, fontSize: 14, fontFamily: F.body, transition: "border 0.2s", ...(sx || {}) }}
-      onFocus={e => e.target.style.borderColor = T.gold}
-      onBlur={e => e.target.style.borderColor = T.border}
-    />
-  </div>
-);
-
-const KPI = ({ icon, label, value, note, color = T.gold }) => (
-  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "20px 22px", animation: "fadeUp 0.4s ease" }}>
-    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-      <span style={{ fontSize: 22 }}>{icon}</span>
-      <Badge color={color} sm>{note}</Badge>
+const Input = ({ label, value, onChange, type = "text", placeholder, t, hint, autoFocus }) => {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {label && <label style={{ fontSize: 13, fontWeight: 500, color: t.sub, letterSpacing: "0.01em" }}>{label}</label>}
+      <input
+        type={type} value={value} onChange={onChange} placeholder={placeholder} autoFocus={autoFocus}
+        onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+        style={{ background: t.bg2, border: `1.5px solid ${focused ? t.blue : "transparent"}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.15s", boxShadow: focused ? `0 0 0 4px ${t.blueBg}` : "none" }}
+      />
+      {hint && <span style={{ fontSize: 12, color: t.sub }}>{hint}</span>}
     </div>
-    <div style={{ fontFamily: F.display, fontSize: 32, fontWeight: 700, color: T.text, marginBottom: 4 }}>{value}</div>
-    <div style={{ color: T.muted, fontSize: 13 }}>{label}</div>
+  );
+};
+
+const Track = ({ value = 0, color, h = 4, t }) => (
+  <div style={{ height: h, borderRadius: h, background: t.bg3, overflow: "hidden" }}>
+    <div style={{ width: `${Math.min(100, Math.max(0, value))}%`, height: "100%", background: color || t.blue, borderRadius: h, transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)" }} />
   </div>
 );
 
-// ─── PROTECTED VIDEO PLAYER ───────────────────────────────────────────────────
-function VideoPlayer({ lesson, userEmail, onClose, onComplete }) {
+const Tag = ({ children, color, t }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", borderRadius: 20, background: (color || t.blue) + "14", color: color || t.blue, fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", letterSpacing: "0.01em" }}>
+    {children}
+  </span>
+);
+
+const Av = ({ name = "?", size = 32, t }) => {
+  const colors = [t.blue, t.green, "#ff9f0a", "#bf5af2", "#ff375f"];
+  const c = colors[(name.charCodeAt(0) || 0) % colors.length];
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, background: c + "18", display: "flex", alignItems: "center", justifyContent: "center", color: c, fontSize: size * 0.38, fontWeight: 600 }}>
+      {name[0]?.toUpperCase()}
+    </div>
+  );
+};
+
+const Card = ({ children, t, style: sx, onClick, hover }) => {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => hover && setHov(true)}
+      onMouseLeave={() => hover && setHov(false)}
+      style={{ background: t.card, border: `1px solid ${t.cardBdr}`, borderRadius: 18, boxShadow: hov ? t.shadowLg : t.shadow, transition: "box-shadow 0.2s, transform 0.2s", transform: hov ? "translateY(-2px)" : "none", cursor: onClick ? "pointer" : "default", ...sx }}>
+      {children}
+    </div>
+  );
+};
+
+const Stat = ({ label, value, t, i = 0 }) => (
+  <Card t={t} style={{ padding: "20px 22px", animation: `fadeUp 0.4s ease ${i * 0.06}s both` }}>
+    <div style={{ fontSize: 32, fontWeight: 300, color: t.text, letterSpacing: "-0.04em", lineHeight: 1, marginBottom: 6 }}>{value}</div>
+    <div style={{ fontSize: 14, color: t.sub, fontWeight: 400 }}>{label}</div>
+  </Card>
+);
+
+const Sep = ({ t }) => <div style={{ height: 1, background: t.sep }} />;
+
+// Code badge — monospace, clean
+const CodeBadge = ({ code, t }) => (
+  <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 8, padding: "8px 14px" }}>
+    <span style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace", fontSize: 15, fontWeight: 500, color: t.text, letterSpacing: "0.12em" }}>{code}</span>
+  </div>
+);
+
+// ─── SPLASH ──────────────────────────────────────────────────────────
+function Splash({ t }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999, gap: 24 }}>
+      <div style={{ animation: "fade 0.5s ease" }}>
+        <div style={{ fontSize: 17, fontWeight: 600, color: t.text, letterSpacing: "0.3em", textTransform: "uppercase", textAlign: "center", marginBottom: 8 }}>
+          AWAD
+        </div>
+        <Spinner color={t.blue} />
+      </div>
+    </div>
+  );
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────
+function Auth({ onLogin, t }) {
+  const [mode, setMode] = useState("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const login = async () => {
+    setErr(""); setLoading(true);
+    try {
+      const admins = await db.get("admins", { email });
+      if (admins?.length && admins[0].password === pass) { setLoading(false); return onLogin("admin", admins[0]); }
+      const studs = await db.get("students", { email });
+      if (studs?.length && studs[0].password === pass) {
+        setLoading(false);
+        if (studs[0].status === "pending") return setErr("Your account is pending approval.");
+        return onLogin("student", studs[0]);
+      }
+      setErr("Incorrect email or password.");
+    } catch { setErr("Something went wrong. Please try again."); }
+    setLoading(false);
+  };
+
+  const signup = async () => {
+    if (!name || !email || !pass) return setErr("Please fill in all fields.");
+    if (pass.length < 6) return setErr("Password must be at least 6 characters.");
+    setLoading(true);
+    try {
+      const ex = await db.get("students", { email });
+      if (ex?.length) { setLoading(false); return setErr("An account with this email already exists."); }
+      await db.insert("students", { name, email, password: pass, status: "pending", enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {} });
+      setDone(true);
+    } catch { setErr("Something went wrong. Please try again."); }
+    setLoading(false);
+  };
+
+  const oauth = () => { window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${window.location.origin}`; };
+
+  return (
+    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+      <div style={{ width: "100%", maxWidth: 380, animation: "fadeUp 0.5s ease" }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
+        </div>
+
+        <Card t={t} style={{ overflow: "hidden" }}>
+          {/* Tabs */}
+          <div style={{ display: "flex", borderBottom: `1px solid ${t.sep}` }}>
+            {[["login", "Sign In"], ["signup", "Create Account"]].map(([m, l]) => (
+              <button key={m} onClick={() => { setMode(m); setErr(""); setDone(false); }}
+                style={{ flex: 1, padding: "14px", background: "transparent", border: "none", borderBottom: `2px solid ${mode === m ? t.blue : "transparent"}`, color: mode === m ? t.blue : t.sub, fontSize: 14, fontWeight: mode === m ? 600 : 400, cursor: "pointer", transition: "all 0.15s", marginBottom: -1 }}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ padding: "28px 24px" }}>
+            {done ? (
+              <div style={{ textAlign: "center", animation: "scaleIn 0.3s ease" }}>
+                <div style={{ width: 52, height: 52, borderRadius: "50%", background: t.greenBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: t.green }}>✓</div>
+                <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>Account requested</div>
+                <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5, marginBottom: 22 }}>Your account is under review and will be activated shortly.</div>
+                <Btn variant="secondary" onClick={() => { setMode("login"); setDone(false); }} t={t}>Back to Sign In</Btn>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* Google */}
+                <button onClick={oauth}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 10, padding: "11px", color: t.text, fontSize: 15, fontWeight: 400, cursor: "pointer", transition: "background 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.background = t.bg3}
+                  onMouseLeave={e => e.currentTarget.style.background = t.bg2}>
+                  <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                  Continue with Google
+                </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Sep t={t} />
+                  <span style={{ fontSize: 13, color: t.muted, flexShrink: 0 }}>or</span>
+                  <Sep t={t} />
+                </div>
+
+                {mode === "signup" && <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" t={t} />}
+                <Input label="Email" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@example.com" t={t} autoFocus={mode === "login"} />
+                <Input label="Password" value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••••" t={t} />
+
+                {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
+
+                <Btn onClick={mode === "login" ? login : signup} disabled={loading} full t={t}>
+                  {loading ? <Spinner size={16} color="#fff" /> : mode === "login" ? "Sign In" : "Create Account"}
+                </Btn>
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── VIDEO PLAYER ────────────────────────────────────────────────────
+function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
   const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [shielding, setShielding] = useState(true);
+  const [prog, setProg] = useState(0);
+  const [ready, setReady] = useState(false);
   const [done, setDone] = useState(false);
   const iv = useRef(null);
 
-  useEffect(() => { const t = setTimeout(() => setShielding(false), 2000); return () => clearTimeout(t); }, []);
+  useEffect(() => { const timer = setTimeout(() => setReady(true), 1600); return () => clearTimeout(timer); }, []);
+
   useEffect(() => {
     if (playing && !done) {
-      iv.current = setInterval(() => setProgress(p => {
+      iv.current = setInterval(() => setProg(p => {
         if (p >= 100) { clearInterval(iv.current); setPlaying(false); setDone(true); onComplete?.(); return 100; }
-        return p + 0.07;
+        return p + 0.06;
       }), 100);
     } else clearInterval(iv.current);
     return () => clearInterval(iv.current);
   }, [playing, done]);
 
-  const total = (() => { const [m, s] = lesson.duration.split(":").map(Number); return m * 60 + s; })();
-  const cur = Math.floor((progress / 100) * total);
-  const fmt = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  const total = (() => { const [m, s] = (lesson.duration || "10:00").split(":").map(Number); return m * 60 + s; })();
+  const cur = Math.floor((prog / 100) * total);
+  const fmt = n => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#000", display: "flex", flexDirection: "column" }}>
-      <GS />
-      {shielding && (
-        <div style={{ position: "absolute", inset: 0, zIndex: 10, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
-          <div style={{ width: 60, height: 60, border: `2px solid ${T.gold}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-          <div style={{ fontFamily: F.display, fontSize: 22, color: T.gold, letterSpacing: 2 }}>AWAD</div>
-          <div style={{ color: T.muted, fontSize: 11, fontFamily: F.mono, letterSpacing: 2 }}>SECURING YOUR STREAM</div>
+      {!ready && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Spinner size={28} color="rgba(255,255,255,0.5)" />
         </div>
       )}
 
-      {/* Video canvas */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", cursor: "pointer", background: "#000" }} onClick={() => !done && setPlaying(p => !p)}>
-        <div style={{ position: "absolute", inset: 0, background: playing ? `linear-gradient(160deg, #0a0a0e ${100 - progress * 0.6}%, #12101a)` : "linear-gradient(160deg,#0a0a0e,#0e0c16)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {!playing && !done && (
-            <div style={{ width: 72, height: 72, borderRadius: "50%", background: T.goldDim, border: `2px solid ${T.goldBdr}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, animation: "glow 2s ease infinite" }}>▶</div>
+      <div style={{ flex: 1, position: "relative", overflow: "hidden", cursor: "pointer" }} onClick={() => !done && setPlaying(p => !p)}>
+        <div style={{ position: "absolute", inset: 0, background: "#050505", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {!playing && !done && ready && (
+            <div style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, backdropFilter: "blur(12px)" }}>▶</div>
           )}
         </div>
 
-        {/* Watermark grid */}
-        {[...Array(6)].map((_, i) => (
-          <div key={i} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-            <div style={{ color: "rgba(255,255,255,0.038)", fontSize: 11, fontFamily: F.mono, whiteSpace: "nowrap", transform: `rotate(-28deg) translateY(${(i - 2.5) * 85}px)`, letterSpacing: 2 }}>
-              {userEmail} · AWAD PROTECTED · {userEmail} · AWAD PROTECTED · {userEmail}
+        {/* Watermark */}
+        {[...Array(5)].map((_, i) => (
+          <div key={i} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" }}>
+            <div style={{ color: "rgba(255,255,255,0.02)", fontSize: 11, fontFamily: "ui-monospace, monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 3, transform: `rotate(-15deg) translateY(${(i - 2) * 120}px)` }}>
+              {[...Array(10)].fill(userEmail).join("  ·  ")}
             </div>
           </div>
         ))}
 
-        {/* Top HUD */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "14px 18px", background: "linear-gradient(to bottom,rgba(0,0,0,0.8),transparent)", display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={e => { e.stopPropagation(); onClose(); }} style={{ background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 8, color: T.text, padding: "8px 14px", fontSize: 13, fontFamily: F.body, fontWeight: 600, backdropFilter: "blur(8px)" }}>← Back</button>
-          <span style={{ color: T.text, fontFamily: F.body, fontWeight: 600, fontSize: 14, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
-          <div style={{ background: "rgba(239,68,68,0.18)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 7, padding: "5px 11px", display: "flex", alignItems: "center", gap: 6, color: "#fca5a5", fontSize: 10, fontFamily: F.mono, letterSpacing: 1 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#ef4444", display: "inline-block", animation: "pulse 1.5s infinite" }} />
-            REC BLOCKED
-          </div>
+        {/* Top bar */}
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "16px 20px", background: "linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)", display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={e => { e.stopPropagation(); onClose(); }}
+            style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
+            ← Back
+          </button>
+          <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 15, fontWeight: 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
         </div>
 
-        {/* Done overlay */}
         {done && (
-          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
-            <div style={{ fontSize: 52 }}>✅</div>
-            <div style={{ fontFamily: F.display, fontSize: 26, color: T.text, fontWeight: 600 }}>Lesson Complete</div>
-            <Btn onClick={onClose}>Continue →</Btn>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(48,209,88,0.15)", border: "1.5px solid rgba(48,209,88,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#30d158", fontSize: 26 }}>✓</div>
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 300 }}>Lesson complete</div>
+            <button onClick={onClose} style={{ background: "#fff", border: "none", borderRadius: 12, padding: "12px 28px", color: "#000", fontSize: 15, fontWeight: 500, cursor: "pointer" }}>Continue</button>
           </div>
         )}
       </div>
 
       {/* Controls */}
-      <div style={{ background: "#0a0a0c", borderTop: `1px solid ${T.border}`, padding: "14px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
-          <span style={{ color: T.muted, fontSize: 11, fontFamily: F.mono, minWidth: 38 }}>{fmt(cur)}</span>
-          <div style={{ flex: 1, height: 3, background: T.border, borderRadius: 2, cursor: "pointer", position: "relative" }}
-            onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setProgress(((e.clientX - r.left) / r.width) * 100); }}>
-            <div style={{ width: `${progress}%`, height: "100%", background: T.gold, borderRadius: 2 }} />
-            <div style={{ position: "absolute", top: "50%", left: `${progress}%`, transform: "translate(-50%,-50%)", width: 11, height: 11, borderRadius: "50%", background: T.gold, boxShadow: `0 0 8px ${T.gold}` }} />
+      <div style={{ background: "#111", borderTop: "1px solid rgba(255,255,255,0.06)", padding: "14px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36 }}>{fmt(cur)}</span>
+          <div style={{ flex: 1, height: 3, background: "rgba(255,255,255,0.1)", borderRadius: 3, cursor: "pointer", position: "relative" }}
+            onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setProg(((e.clientX - r.left) / r.width) * 100); }}>
+            <div style={{ width: `${prog}%`, height: "100%", background: "#fff", borderRadius: 3 }} />
           </div>
-          <span style={{ color: T.muted, fontSize: 11, fontFamily: F.mono, minWidth: 38 }}>{lesson.duration}</span>
+          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36, textAlign: "right" }}>{lesson.duration}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => setProgress(p => Math.max(0, p - 4))} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, padding: "8px 13px", fontSize: 12 }}>⏮ 10s</button>
-          <button onClick={() => setPlaying(p => !p)} style={{ background: T.gold, border: "none", borderRadius: "50%", width: 46, height: 46, fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", color: "#080809" }}>{playing ? "⏸" : "▶"}</button>
-          <button onClick={() => setProgress(p => Math.min(100, p + 4))} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, padding: "8px 13px", fontSize: 12 }}>10s ⏭</button>
-          <div style={{ marginLeft: "auto" }}><Badge sm>🔒 Protected</Badge></div>
+          <button onClick={() => setProg(p => Math.max(0, p - 4))} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>−10s</button>
+          <button onClick={() => setPlaying(p => !p)} style={{ background: "rgba(255,255,255,0.9)", border: "none", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#000", cursor: "pointer" }}>{playing ? "⏸" : "▶"}</button>
+          <button onClick={() => setProg(p => Math.min(100, p + 4))} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>+10s</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── QUIZ ─────────────────────────────────────────────────────────────────────
-function QuizModal({ quiz, courseId, existing, onSubmit, onClose }) {
+// ─── QUIZ ────────────────────────────────────────────────────────────
+function QuizModal({ quiz, existing, onSubmit, onClose, t }) {
   const [ans, setAns] = useState({});
   const [submitted, setSubmitted] = useState(existing !== undefined);
   const [score, setScore] = useState(existing ?? null);
@@ -277,501 +405,534 @@ function QuizModal({ quiz, courseId, existing, onSubmit, onClose }) {
     setScore(s); setSubmitted(true); onSubmit(s);
   };
 
-  const pass = score >= 70;
-
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)" }}>
-      <GS />
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 20, width: "100%", maxWidth: 540, maxHeight: "88vh", overflow: "auto", animation: "scaleIn 0.25s ease" }}>
-        <div style={{ padding: "22px 26px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontFamily: F.display, fontSize: 22, fontWeight: 700, color: T.text }}>{quiz.title}</div>
-            <div style={{ color: T.muted, fontSize: 13, marginTop: 3 }}>{quiz.questions.length} questions</div>
-          </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: T.muted, fontSize: 22, padding: 4 }}>✕</button>
+    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
+      <Card t={t} style={{ width: "100%", maxWidth: 520, maxHeight: "88vh", overflow: "auto", animation: "scaleIn 0.22s ease" }}>
+        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>{quiz.title}</div>
+          <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer" }}>✕</button>
         </div>
-        <div style={{ padding: "24px 26px", display: "flex", flexDirection: "column", gap: 22 }}>
+        <div style={{ padding: "24px" }}>
           {submitted && (
-            <div style={{ background: pass ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)", border: `1px solid ${pass ? T.success : T.error}33`, borderRadius: 14, padding: "20px", textAlign: "center" }}>
-              <div style={{ fontSize: 40, marginBottom: 10 }}>{pass ? "🏆" : "📖"}</div>
-              <div style={{ fontFamily: F.display, fontSize: 36, fontWeight: 700, color: pass ? T.success : T.error }}>{score}%</div>
-              <div style={{ color: T.soft, fontSize: 14, marginTop: 6 }}>{pass ? "Excellent! You passed." : "Review the material and try again."}</div>
+            <div style={{ textAlign: "center", padding: "24px", background: score >= 70 ? t.greenBg : t.redBg, borderRadius: 14, marginBottom: 28 }}>
+              <div style={{ fontSize: 48, fontWeight: 200, color: score >= 70 ? t.green : t.red, letterSpacing: "-0.04em" }}>{score}%</div>
+              <div style={{ fontSize: 15, color: t.sub, marginTop: 6 }}>{score >= 70 ? "Passed" : "Keep studying and try again"}</div>
             </div>
           )}
-          {quiz.questions.map((q, qi) => (
-            <div key={q.id}>
-              <div style={{ color: T.text, fontFamily: F.body, fontWeight: 600, fontSize: 15, marginBottom: 12, lineHeight: 1.5 }}>{qi + 1}. {q.text}</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {q.options.map((opt, oi) => {
-                  const sel = ans[q.id] === oi;
-                  const correct = submitted && oi === q.answer;
-                  const wrong = submitted && sel && oi !== q.answer;
-                  return (
-                    <button key={oi} onClick={() => !submitted && setAns(a => ({ ...a, [q.id]: oi }))}
-                      style={{ background: correct ? "rgba(34,197,94,0.12)" : wrong ? "rgba(239,68,68,0.12)" : sel ? T.goldDim : T.surface, border: `1px solid ${correct ? T.success + "55" : wrong ? T.error + "55" : sel ? T.goldBdr : T.border}`, borderRadius: 10, padding: "12px 16px", color: T.text, textAlign: "left", fontSize: 14, fontFamily: F.body, cursor: submitted ? "default" : "pointer", transition: "all 0.15s", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span><span style={{ fontFamily: F.mono, color: T.muted, marginRight: 10, fontSize: 11 }}>{String.fromCharCode(65 + oi)}.</span>{opt}</span>
-                      {correct && <span>✅</span>}{wrong && <span>❌</span>}
-                    </button>
-                  );
-                })}
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+            {quiz.questions.map((q, qi) => (
+              <div key={q.id}>
+                <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 12, lineHeight: 1.5 }}>{qi + 1}. {q.text}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {q.options.map((opt, oi) => {
+                    const sel = ans[q.id] === oi;
+                    const correct = submitted && oi === q.answer;
+                    const wrong = submitted && sel && oi !== q.answer;
+                    return (
+                      <button key={oi} onClick={() => !submitted && setAns(a => ({ ...a, [q.id]: oi }))}
+                        style={{ background: correct ? t.greenBg : wrong ? t.redBg : sel ? t.blueBg : t.bg2, border: `1.5px solid ${correct ? t.green + "40" : wrong ? t.red + "40" : sel ? t.blue + "50" : "transparent"}`, borderRadius: 10, padding: "11px 16px", color: t.text, textAlign: "left", fontSize: 15, cursor: submitted ? "default" : "pointer", transition: "all 0.15s", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>{opt}</span>
+                        {correct && <span style={{ color: t.green }}>✓</span>}
+                        {wrong && <span style={{ color: t.red }}>✗</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
           {!submitted && (
-            <Btn onClick={submit} disabled={Object.keys(ans).length < quiz.questions.length} full>Submit Assessment →</Btn>
+            <div style={{ marginTop: 24 }}>
+              <Btn onClick={submit} disabled={Object.keys(ans).length < quiz.questions.length} full t={t}>Submit</Btn>
+            </div>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
-// ─── SPLASH ───────────────────────────────────────────────────────────────────
-function Splash() {
-  return (
-    <div style={{ position: "fixed", inset: 0, background: T.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
-      <GS />
-      <div style={{ textAlign: "center", animation: "fadeUp 0.6s ease" }}>
-        <div style={{ width: 80, height: 80, border: `1.5px solid ${T.gold}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", animation: "glow 2s ease infinite" }}>
-          <div style={{ fontFamily: F.display, fontSize: 32, color: T.gold, fontWeight: 700, letterSpacing: 1 }}>A</div>
-        </div>
-        <div style={{ fontFamily: F.display, fontSize: 44, fontWeight: 700, color: T.text, letterSpacing: 3 }}>AWAD</div>
-        <div style={{ color: T.muted, fontSize: 12, fontFamily: F.mono, letterSpacing: 4, marginTop: 8 }}>LEARNING PLATFORM</div>
-      </div>
-      <div style={{ position: "absolute", bottom: 40, display: "flex", gap: 6 }}>
-        {[0, 1, 2].map(i => <div key={i} style={{ width: 4, height: 4, borderRadius: "50%", background: T.gold, animation: `shimmer 1.2s ease ${i * 0.2}s infinite` }} />)}
-      </div>
-    </div>
-  );
-}
-
-// ─── LOGIN ────────────────────────────────────────────────────────────────────
-function Login({ data, onLogin }) {
-  const [email, setEmail] = useState("");
-  const [pass, setPass] = useState("");
-  const [err, setErr] = useState("");
+// ─── REDEEM CODE MODAL ───────────────────────────────────────────────
+function RedeemModal({ studentId, studentEmail, courses, onSuccess, onClose, t }) {
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
 
-  const go = () => {
+  const redeem = async () => {
+    const trimmed = code.trim().toUpperCase();
+    if (!trimmed) return setErr("Please enter a code.");
     setErr(""); setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      if (email === data.admin.email && pass === data.admin.password) return onLogin("admin", data.admin);
-      const s = data.students.find(x => x.email === email && x.password === pass);
-      if (s) {
-        if (s.status === "pending") return setErr("Your account is awaiting admin approval.");
-        return onLogin("student", s);
+    try {
+      const results = await db.get("codes", { code: trimmed });
+      if (!results?.length) { setLoading(false); return setErr("This code doesn't exist."); }
+      const entry = results[0];
+      if (entry.used) { setLoading(false); return setErr("This code has already been used."); }
+      // Mark code as used
+      await db.updateWhere("codes", "code", trimmed, { used: true, used_by: studentEmail, used_at: new Date().toISOString() });
+      // Enroll student
+      const studs = await db.get("students", { id: studentId });
+      const current = studs[0]?.enrolled_courses || [];
+      if (!current.includes(entry.course_id)) {
+        await db.update("students", studentId, { enrolled_courses: [...current, entry.course_id] });
       }
-      setErr("Incorrect email or password.");
-    }, 700);
+      const course = courses.find(c => c.id === entry.course_id);
+      onSuccess(course?.title || "your course");
+    } catch { setErr("Something went wrong. Please try again."); }
+    setLoading(false);
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, position: "relative", overflow: "hidden" }}>
-      <GS />
-      {/* background decoration */}
-      <div style={{ position: "absolute", top: "10%", left: "50%", transform: "translateX(-50%)", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(212,175,55,0.04) 0%, transparent 70%)", pointerEvents: "none" }} />
-      <div style={{ width: "100%", maxWidth: 400, animation: "fadeUp 0.5s ease" }}>
-        {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 44 }}>
-          <div style={{ width: 64, height: 64, border: `1.5px solid ${T.goldBdr}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", background: T.goldDim }}>
-            <span style={{ fontFamily: F.display, fontSize: 28, color: T.gold, fontWeight: 700 }}>A</span>
+    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
+      <Card t={t} style={{ width: "100%", maxWidth: 400, animation: "scaleIn 0.22s ease" }}>
+        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Enter Access Code</div>
+          <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5 }}>Enter the code you received to unlock your course.</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Input label="Access Code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX" t={t} autoFocus hint="Codes are case-insensitive" />
           </div>
-          <div style={{ fontFamily: F.display, fontSize: 34, fontWeight: 700, color: T.text, letterSpacing: 3 }}>AWAD</div>
-          <div style={{ color: T.muted, fontSize: 11, fontFamily: F.mono, letterSpacing: 3, marginTop: 6 }}>LEARNING PLATFORM</div>
+          {err && <div style={{ background: t.redBg, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
+          <Btn onClick={redeem} disabled={loading || !code.trim()} full t={t}>
+            {loading ? <Spinner size={16} color="#fff" /> : "Unlock Course"}
+          </Btn>
         </div>
-
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 20, padding: "32px 28px" }}>
-          <div style={{ fontFamily: F.display, fontSize: 22, color: T.text, fontWeight: 600, marginBottom: 24, textAlign: "center" }}>Welcome Back</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Inp label="Email" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="your@email.com" />
-            <Inp label="Password" value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••••" />
-            {err && (
-              <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "11px 14px", color: "#f87171", fontSize: 13, textAlign: "center" }}>{err}</div>
-            )}
-            <Btn onClick={go} disabled={loading} full style={{ marginTop: 4 }}>
-              {loading ? "Signing in..." : "Sign In →"}
-            </Btn>
-          </div>
-        </div>
-
-        {/* Demo shortcuts */}
-        <div style={{ marginTop: 20, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 14, padding: "16px 18px" }}>
-          <div style={{ color: T.muted, fontSize: 10, fontFamily: F.mono, letterSpacing: 1.5, marginBottom: 12 }}>DEMO ACCOUNTS — CLICK TO FILL</div>
-          {[["Admin", "admin@awad.com", "awad2024"], ["Student", "sarah@example.com", "1234"]].map(([role, e, p]) => (
-            <div key={role} onClick={() => { setEmail(e); setPass(p); }}
-              style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 12px", borderRadius: 9, cursor: "pointer", marginBottom: 6, border: `1px solid ${T.border}`, background: T.card, transition: "border 0.15s" }}
-              onMouseEnter={el => el.currentTarget.style.borderColor = T.goldBdr}
-              onMouseLeave={el => el.currentTarget.style.borderColor = T.border}>
-              <Badge sm color={role === "Admin" ? T.gold : T.info}>{role}</Badge>
-              <span style={{ color: T.soft, fontSize: 12, fontFamily: F.mono }}>{e}</span>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 20 }}>
-          {["🔒 Encrypted", "💧 Watermarked", "📵 Rec Blocked"].map(x => (
-            <span key={x} style={{ color: T.muted, fontSize: 11, fontFamily: F.mono }}>{x}</span>
-          ))}
-        </div>
-      </div>
+      </Card>
     </div>
   );
 }
 
-// ─── ADMIN ────────────────────────────────────────────────────────────────────
-function Admin({ data, setData, onLogout }) {
+// ─── ADMIN ───────────────────────────────────────────────────────────
+function Admin({ me, onLogout, t }) {
   const [tab, setTab] = useState("overview");
+  const [students, setStudents] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
   const [ns, setNs] = useState({ name: "", email: "", password: "", courses: [] });
+  const [genCourseId, setGenCourseId] = useState("");
+  const [genCount, setGenCount] = useState(1);
+  const [generatedCodes, setGeneratedCodes] = useState([]);
+  const [copied, setCopied] = useState(null);
 
-  const pop = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
+  const notify = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
 
-  const approve = id => { setData(d => ({ ...d, students: d.students.map(s => s.id === id ? { ...s, status: "active" } : s) })); pop("Student approved!"); };
-  const remove  = id => { setData(d => ({ ...d, students: d.students.filter(s => s.id !== id) })); pop("Student removed.", "warn"); };
-  const addStud = () => {
+  useEffect(() => {
+    Promise.all([db.get("students"), db.get("courses"), db.get("codes")])
+      .then(([s, c, cd]) => { setStudents(s || []); setCourses(c || []); setCodes(cd || []); setLoading(false); });
+  }, []);
+
+  const approve = async id => { await db.update("students", id, { status: "active" }); setStudents(s => s.map(x => x.id === id ? { ...x, status: "active" } : x)); notify("Approved"); };
+  const remove = async id => { await db.del("students", id); setStudents(s => s.filter(x => x.id !== id)); notify("Removed", false); };
+
+  const invite = async () => {
     if (!ns.name || !ns.email || !ns.password) return;
-    const s = { id: Date.now(), ...ns, enrolledCourses: ns.courses, status: "active", joinDate: new Date().toISOString().slice(0, 10), progress: {} };
-    setData(d => ({ ...d, students: [...d.students, s] }));
-    setNs({ name: "", email: "", password: "", courses: [] });
-    setModal(null); pop("Student invited!");
+    const r = await db.insert("students", { name: ns.name, email: ns.email, password: ns.password, status: "active", enrolled_courses: ns.courses, join_date: new Date().toISOString().slice(0, 10), progress: {} });
+    if (r?.[0]) setStudents(s => [...s, r[0]]);
+    setNs({ name: "", email: "", password: "", courses: [] }); setModal(null); notify("Student invited");
   };
 
-  const pending = data.students.filter(s => s.status === "pending");
-  const active  = data.students.filter(s => s.status === "active");
-  const allLessons = data.courses.flatMap(c => c.chapters.flatMap(ch => ch.lessons));
-  const avgProg = active.length ? Math.round(active.reduce((a, s) => {
-    const w = Object.values(s.progress).flatMap(p => p.watched || []).length;
-    return a + (allLessons.length ? w / allLessons.length * 100 : 0);
-  }, 0) / active.length) : 0;
+  const generateCodes = async () => {
+    if (!genCourseId) return;
+    const newCodes = [];
+    for (let i = 0; i < genCount; i++) {
+      const code = generateCode();
+      const result = await db.insert("codes", { code, course_id: genCourseId, used: false });
+      if (result?.[0]) { newCodes.push(result[0]); setCodes(prev => [...prev, result[0]]); }
+    }
+    setGeneratedCodes(newCodes);
+    notify(`${newCodes.length} code${newCodes.length > 1 ? "s" : ""} generated`);
+  };
 
-  const navs = [
-    { id: "overview",  label: "Overview",  icon: "◈" },
-    { id: "students",  label: "Students",  icon: "⊞" },
-    { id: "courses",   label: "Courses",   icon: "◧" },
-    { id: "analytics", label: "Analytics", icon: "◉" },
+  const copyCode = (code) => {
+    navigator.clipboard.writeText(code);
+    setCopied(code);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const copyAll = () => {
+    const text = generatedCodes.map(c => c.code).join("\n");
+    navigator.clipboard.writeText(text);
+    notify("All codes copied");
+  };
+
+  if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner t={t} /></div>;
+
+  const pending = students.filter(s => s.status === "pending");
+  const active = students.filter(s => s.status === "active");
+  const allL = courses.flatMap(c => (c.chapters || []).flatMap(ch => ch.lessons || []));
+  const pct = s => allL.length ? Math.round(Object.values(s.progress || {}).flatMap(p => p.watched || []).length / allL.length * 100) : 0;
+  const avgPct = active.length ? Math.round(active.reduce((a, s) => a + pct(s), 0) / active.length) : 0;
+  const unusedCodes = codes.filter(c => !c.used).length;
+
+  const navTabs = [
+    { id: "overview", label: "Overview" },
+    { id: "students", label: "Students", badge: pending.length },
+    { id: "courses", label: "Courses" },
+    { id: "codes", label: "Access Codes" },
+    { id: "analytics", label: "Analytics" },
   ];
 
-  // Student detail modal
-  const StudDetail = ({ s }) => {
-    const w = Object.values(s.progress).flatMap(p => p.watched || []).length;
-    const pct = allLessons.length ? Math.round(w / allLessons.length * 100) : 0;
-    return (
-      <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)" }}>
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 20, width: "100%", maxWidth: 600, maxHeight: "88vh", overflow: "auto", animation: "scaleIn 0.25s ease" }}>
-          <div style={{ padding: "22px 26px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 14 }}>
-            <Av name={s.name} size={50} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: F.display, fontSize: 22, fontWeight: 700, color: T.text }}>{s.name}</div>
-              <div style={{ color: T.muted, fontSize: 12, fontFamily: F.mono, marginTop: 3 }}>{s.email}</div>
-            </div>
-            <Badge color={s.status === "active" ? T.success : T.warn}>{s.status}</Badge>
-            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 22 }}>✕</button>
-          </div>
-          <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              {[["Lessons Watched", w], ["Overall Progress", `${pct}%`], ["Joined", s.joinDate]].map(([l, v]) => (
-                <div key={l} style={{ background: T.surface, borderRadius: 12, padding: "14px 16px" }}>
-                  <div style={{ fontFamily: F.display, fontSize: 22, color: T.text, fontWeight: 700 }}>{v}</div>
-                  <div style={{ color: T.muted, fontSize: 12, marginTop: 3 }}>{l}</div>
-                </div>
-              ))}
-            </div>
-            {data.courses.filter(c => s.enrolledCourses.includes(c.id)).map(c => {
-              const sp = s.progress[c.id] || { watched: [], quizScores: {} };
-              const cl = c.chapters.flatMap(ch => ch.lessons);
-              const cp = Math.round(((sp.watched?.length || 0) / cl.length) * 100);
-              return (
-                <div key={c.id} style={{ background: T.surface, borderRadius: 14, padding: "16px 18px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                    <div style={{ fontFamily: F.body, fontWeight: 600, color: T.text, fontSize: 14 }}>{c.title}</div>
-                    <span style={{ color: c.color, fontFamily: F.mono, fontSize: 13 }}>{cp}%</span>
-                  </div>
-                  <Pill value={cp} color={c.color} />
-                  <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {cl.map(l => (
-                      <div key={l.id} style={{ background: sp.watched?.includes(l.id) ? c.color + "18" : T.card, border: `1px solid ${sp.watched?.includes(l.id) ? c.color + "44" : T.border}`, borderRadius: 6, padding: "3px 9px", fontSize: 11, color: sp.watched?.includes(l.id) ? c.color : T.muted }}>
-                        {sp.watched?.includes(l.id) ? "✓ " : ""}{l.title}
-                      </div>
-                    ))}
-                    {c.chapters.filter(ch => ch.quiz && sp.quizScores?.[ch.quiz.id] !== undefined).map(ch => (
-                      <Badge key={ch.quiz.id} color={sp.quizScores[ch.quiz.id] >= 70 ? T.success : T.error} sm>Quiz {sp.quizScores[ch.quiz.id]}%</Badge>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const ModalWrap = ({ children, maxW = 440 }) => (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
+      <Card t={t} style={{ width: "100%", maxWidth: maxW, animation: "scaleIn 0.22s ease" }}>
+        {children}
+      </Card>
+    </div>
+  );
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: T.bg }}>
-      <GS />
+    <div style={{ display: "flex", minHeight: "100vh", background: t.bg }}>
       {toast && (
-        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, background: toast.type === "ok" ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)", border: `1px solid ${toast.type === "ok" ? T.success : T.error}44`, borderRadius: 12, padding: "12px 20px", color: toast.type === "ok" ? T.success : T.error, fontSize: 13, fontWeight: 600, backdropFilter: "blur(12px)", animation: "fadeUp 0.3s ease" }}>
-          {toast.msg}
-        </div>
-      )}
-      {modal?.type === "detail" && <StudDetail s={modal.s} />}
-      {modal?.type === "add" && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(10px)" }}>
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 20, width: "100%", maxWidth: 440, animation: "scaleIn 0.25s ease" }}>
-            <div style={{ padding: "20px 24px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontFamily: F.display, fontSize: 22, color: T.text, fontWeight: 700 }}>Invite Student</div>
-              <button onClick={() => setModal(null)} style={{ background: "none", border: "none", color: T.muted, fontSize: 22 }}>✕</button>
-            </div>
-            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 15 }}>
-              <Inp label="Full Name" value={ns.name} onChange={e => setNs(x => ({ ...x, name: e.target.value }))} placeholder="Jane Doe" />
-              <Inp label="Email" type="email" value={ns.email} onChange={e => setNs(x => ({ ...x, email: e.target.value }))} placeholder="jane@example.com" />
-              <Inp label="Temporary Password" type="password" value={ns.password} onChange={e => setNs(x => ({ ...x, password: e.target.value }))} placeholder="Min 4 characters" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                <label style={{ color: T.soft, fontSize: 11, fontFamily: F.mono, letterSpacing: 1 }}>ENROLL IN COURSES</label>
-                {data.courses.map(c => (
-                  <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ns.courses.includes(c.id) ? T.goldDim : T.surface, border: `1px solid ${ns.courses.includes(c.id) ? T.goldBdr : T.border}`, borderRadius: 9, cursor: "pointer" }}>
-                    <input type="checkbox" checked={ns.courses.includes(c.id)} onChange={e => setNs(x => ({ ...x, courses: e.target.checked ? [...x.courses, c.id] : x.courses.filter(i => i !== c.id) }))} style={{ accentColor: T.gold }} />
-                    <span style={{ color: T.text, fontSize: 14 }}>{c.title}</span>
-                  </label>
-                ))}
-              </div>
-              <Btn onClick={addStud} full>Invite Student →</Btn>
-            </div>
-          </div>
+        <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, background: t.card, border: `1px solid ${toast.ok ? t.green + "25" : t.red + "25"}`, borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, boxShadow: t.shadowLg, animation: "fadeUp 0.25s ease" }}>
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: toast.ok ? t.green : t.red, flexShrink: 0 }} />
+          <span style={{ fontSize: 14, color: t.text }}>{toast.msg}</span>
         </div>
       )}
 
+      {/* Invite Modal */}
+      {modal?.type === "invite" && (
+        <ModalWrap>
+          <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Invite Student</div>
+            <button onClick={() => setModal(null)} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer" }}>✕</button>
+          </div>
+          <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 14 }}>
+            <Input label="Full Name" value={ns.name} onChange={e => setNs(x => ({ ...x, name: e.target.value }))} placeholder="Jane Doe" t={t} />
+            <Input label="Email" type="email" value={ns.email} onChange={e => setNs(x => ({ ...x, email: e.target.value }))} placeholder="jane@example.com" t={t} />
+            <Input label="Temporary Password" type="password" value={ns.password} onChange={e => setNs(x => ({ ...x, password: e.target.value }))} placeholder="Min. 6 characters" t={t} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Enroll in courses</label>
+              {courses.map(c => (
+                <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ns.courses.includes(c.id) ? t.blueBg : t.bg2, border: `1px solid ${ns.courses.includes(c.id) ? t.blue + "30" : "transparent"}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}>
+                  <input type="checkbox" checked={ns.courses.includes(c.id)} onChange={e => setNs(x => ({ ...x, courses: e.target.checked ? [...x.courses, c.id] : x.courses.filter(i => i !== c.id) }))} style={{ accentColor: t.blue, width: 15, height: 15 }} />
+                  <span style={{ color: t.text, fontSize: 14 }}>{c.title}</span>
+                </label>
+              ))}
+            </div>
+            <Btn onClick={invite} full t={t}>Send Invitation</Btn>
+          </div>
+        </ModalWrap>
+      )}
+
+      {/* Detail Modal */}
+      {modal?.type === "detail" && (() => {
+        const s = modal.s;
+        return (
+          <ModalWrap maxW={560}>
+            <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", alignItems: "center", gap: 14 }}>
+              <Av name={s.name} size={44} t={t} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>{s.name}</div>
+                <div style={{ fontSize: 13, color: t.sub }}>{s.email}</div>
+              </div>
+              <Tag color={s.status === "active" ? t.green : t.orange} t={t}>{s.status}</Tag>
+              <button onClick={() => setModal(null)} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ padding: "22px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                {[["Watched", Object.values(s.progress || {}).flatMap(p => p.watched || []).length], ["Progress", `${pct(s)}%`], ["Joined", s.join_date]].map(([l, v]) => (
+                  <div key={l} style={{ background: t.bg2, borderRadius: 12, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 24, fontWeight: 300, color: t.text, letterSpacing: "-0.02em" }}>{v}</div>
+                    <div style={{ fontSize: 12, color: t.sub, marginTop: 4 }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              {courses.filter(c => (s.enrolled_courses || []).includes(c.id)).map(c => {
+                const sp = (s.progress || {})[c.id] || { watched: [] };
+                const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
+                const cp = cl.length ? Math.round(((sp.watched?.length || 0) / cl.length) * 100) : 0;
+                return (
+                  <div key={c.id} style={{ background: t.bg2, borderRadius: 12, padding: "14px 16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{c.title}</span>
+                      <span style={{ fontSize: 13, color: t.blue }}>{cp}%</span>
+                    </div>
+                    <Track value={cp} color={c.color || t.blue} t={t} />
+                  </div>
+                );
+              })}
+            </div>
+          </ModalWrap>
+        );
+      })()}
+
       {/* Sidebar */}
-      <div style={{ width: 210, background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
-        <div style={{ padding: "22px 18px", borderBottom: `1px solid ${T.border}` }}>
-          <div style={{ fontFamily: F.display, fontSize: 22, color: T.gold, letterSpacing: 2, fontWeight: 700 }}>AWAD</div>
-          <Badge sm style={{ marginTop: 6 }}>Admin Panel</Badge>
+      <div style={{ width: 220, background: t.card, borderRight: `1px solid ${t.sep}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
+        <div style={{ padding: "24px 18px 20px", borderBottom: `1px solid ${t.sep}` }}>
+          <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
+          <div style={{ fontSize: 12, color: t.sub, marginTop: 4 }}>Admin</div>
         </div>
-        <nav style={{ flex: 1, padding: "14px 10px", display: "flex", flexDirection: "column", gap: 3 }}>
-          {navs.map(n => (
-            <button key={n.id} onClick={() => setTab(n.id)} style={{ background: tab === n.id ? T.goldDim : "none", border: tab === n.id ? `1px solid ${T.goldBdr}` : "1px solid transparent", borderRadius: 10, padding: "11px 14px", color: tab === n.id ? T.gold : T.muted, fontSize: 14, textAlign: "left", fontWeight: tab === n.id ? 600 : 400, display: "flex", alignItems: "center", gap: 10, transition: "all 0.15s" }}>
-              <span style={{ fontFamily: F.mono, fontSize: 16 }}>{n.icon}</span>{n.label}
-              {n.id === "students" && pending.length > 0 && <span style={{ marginLeft: "auto", background: T.warn + "22", border: `1px solid ${T.warn}44`, color: T.warn, borderRadius: 8, padding: "1px 7px", fontSize: 10, fontFamily: F.mono }}>{pending.length}</span>}
+        <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
+          {navTabs.map(n => (
+            <button key={n.id} onClick={() => setTab(n.id)}
+              style={{ background: tab === n.id ? t.bg2 : "transparent", border: "none", borderRadius: 10, padding: "10px 12px", color: tab === n.id ? t.text : t.sub, fontSize: 14, fontWeight: tab === n.id ? 500 : 400, textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all 0.15s" }}>
+              {n.label}
+              {n.badge > 0 && <Tag color={t.orange} t={t}>{n.badge}</Tag>}
             </button>
           ))}
         </nav>
-        <div style={{ padding: "14px 10px", borderTop: `1px solid ${T.border}` }}>
-          <button onClick={onLogout} style={{ background: "none", border: "none", color: T.muted, fontSize: 13, width: "100%", textAlign: "left", padding: "9px 14px", borderRadius: 9 }}>← Sign Out</button>
+        <div style={{ padding: "12px 8px", borderTop: `1px solid ${t.sep}` }}>
+          <div style={{ padding: "10px 12px", background: t.bg2, borderRadius: 10, marginBottom: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: t.text }}>{me.name}</div>
+            <div style={{ fontSize: 11, color: t.sub }}>Administrator</div>
+          </div>
+          <button onClick={onLogout} style={{ background: "none", border: "none", color: t.sub, fontSize: 13, padding: "8px 12px", cursor: "pointer", width: "100%", textAlign: "left" }}>Sign out</button>
         </div>
       </div>
 
       {/* Main */}
-      <div style={{ flex: 1, overflow: "auto", padding: "32px 36px" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: "36px 40px" }}>
 
-        {/* OVERVIEW */}
         {tab === "overview" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div style={{ marginBottom: 28 }}>
-              <div style={{ fontFamily: F.display, fontSize: 32, fontWeight: 700, color: T.text, letterSpacing: 0.5 }}>Good day, {data.admin.name} 👋</div>
-              <div style={{ color: T.muted, fontSize: 14, marginTop: 5 }}>Here's what's happening on your platform.</div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14, marginBottom: 28 }}>
-              <KPI icon="👥" label="Total Students" value={data.students.length} note="All Time" />
-              <KPI icon="✅" label="Active Students" value={active.length} note="Active" color={T.success} />
-              <KPI icon="📚" label="Courses" value={data.courses.length} note="Live" color={T.info} />
-              <KPI icon="📈" label="Avg Progress" value={`${avgProg}%`} note="Overall" color={T.warn} />
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Overview</h1>
+            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Your platform at a glance.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+              <Stat label="Total students" value={students.length} t={t} i={0} />
+              <Stat label="Active" value={active.length} t={t} i={1} />
+              <Stat label="Courses" value={courses.length} t={t} i={2} />
+              <Stat label="Available codes" value={unusedCodes} t={t} i={3} />
             </div>
             {pending.length > 0 && (
-              <div style={{ background: "rgba(245,158,11,0.06)", border: `1px solid ${T.warn}30`, borderRadius: 16, padding: "20px 24px", marginBottom: 22 }}>
-                <div style={{ fontFamily: F.body, fontWeight: 700, color: T.warn, marginBottom: 14, fontSize: 14 }}>⏳ Awaiting Approval ({pending.length})</div>
-                {pending.map(s => (
-                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
-                    <Av name={s.name} />
+              <Card t={t} style={{ padding: "20px 22px", marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ fontSize: 15, fontWeight: 500, color: t.text }}>Pending approval</div>
+                  <Tag color={t.orange} t={t}>{pending.length}</Tag>
+                </div>
+                {pending.map((s, i) => (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderTop: i > 0 ? `1px solid ${t.sep}` : "none" }}>
+                    <Av name={s.name} t={t} />
                     <div style={{ flex: 1 }}>
-                      <div style={{ color: T.text, fontWeight: 600, fontSize: 14 }}>{s.name}</div>
-                      <div style={{ color: T.muted, fontSize: 12, fontFamily: F.mono }}>{s.email}</div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{s.name}</div>
+                      <div style={{ fontSize: 12, color: t.sub }}>{s.email}</div>
                     </div>
-                    <Btn sm variant="success" onClick={() => approve(s.id)}>Approve</Btn>
-                    <Btn sm variant="danger" onClick={() => remove(s.id)}>Reject</Btn>
+                    <Btn sm onClick={() => approve(s.id)} t={t}>Approve</Btn>
+                    <Btn sm variant="danger" onClick={() => remove(s.id)} t={t}>Decline</Btn>
                   </div>
                 ))}
-              </div>
+              </Card>
             )}
-            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "20px 24px" }}>
-              <div style={{ fontFamily: F.body, fontWeight: 700, color: T.text, marginBottom: 18, fontSize: 15 }}>Student Activity</div>
-              {active.slice(0, 5).map(s => {
-                const w = Object.values(s.progress).flatMap(p => p.watched || []).length;
-                const pct = allLessons.length ? Math.round(w / allLessons.length * 100) : 0;
-                return (
-                  <div key={s.id} onClick={() => setModal({ type: "detail", s })} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 0", borderBottom: `1px solid ${T.border}`, cursor: "pointer" }}>
-                    <Av name={s.name} size={34} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: T.text, fontSize: 14, fontWeight: 600, marginBottom: 5 }}>{s.name}</div>
-                      <Pill value={pct} height={4} />
-                    </div>
-                    <span style={{ color: T.gold, fontFamily: F.mono, fontSize: 13 }}>{pct}%</span>
+            <Card t={t} style={{ padding: "20px 22px" }}>
+              <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 16 }}>Student progress</div>
+              {active.slice(0, 8).map((s, i) => (
+                <div key={s.id} onClick={() => setModal({ type: "detail", s })} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: i > 0 ? `1px solid ${t.sep}` : "none", cursor: "pointer", transition: "opacity 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.opacity = "0.6"}
+                  onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
+                  <Av name={s.name} size={30} t={t} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: t.text, marginBottom: 5 }}>{s.name}</div>
+                    <Track value={pct(s)} t={t} />
                   </div>
-                );
-              })}
-            </div>
+                  <span style={{ fontSize: 13, color: t.blue, minWidth: 36, textAlign: "right" }}>{pct(s)}%</span>
+                </div>
+              ))}
+            </Card>
           </div>
         )}
 
-        {/* STUDENTS */}
         {tab === "students" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
               <div>
-                <div style={{ fontFamily: F.display, fontSize: 28, fontWeight: 700, color: T.text }}>Students</div>
-                <div style={{ color: T.muted, fontSize: 13, marginTop: 3 }}>{data.students.length} total · {active.length} active</div>
+                <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Students</h1>
+                <div style={{ fontSize: 15, color: t.sub }}>{students.length} total · {active.length} active</div>
               </div>
-              <Btn onClick={() => setModal({ type: "add" })}>+ Invite Student</Btn>
+              <Btn onClick={() => setModal({ type: "invite" })} t={t}>+ Invite</Btn>
             </div>
-            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, overflow: "hidden" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 2fr 1fr 1fr auto", padding: "12px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface }}>
-                {["Name","Email","Courses","Progress","Status",""].map(h => (
-                  <div key={h} style={{ color: T.muted, fontSize: 10, fontFamily: F.mono, letterSpacing: 1 }}>{h.toUpperCase()}</div>
-                ))}
+            <Card t={t} style={{ overflow: "hidden" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "12px 20px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
+                {["Name", "Email", "Courses", "Progress", "Status", ""].map(h => <span key={h} style={{ fontSize: 12, fontWeight: 500, color: t.sub }}>{h}</span>)}
               </div>
-              {data.students.map((s, i) => {
-                const w = Object.values(s.progress).flatMap(p => p.watched || []).length;
-                const pct = allLessons.length ? Math.round(w / allLessons.length * 100) : 0;
-                return (
-                  <div key={s.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 2fr 1fr 1fr auto", padding: "13px 20px", borderBottom: `1px solid ${T.border}`, alignItems: "center", background: i % 2 ? "rgba(255,255,255,0.01)" : "transparent" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <Av name={s.name} size={30} /><span style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>{s.name}</span>
-                    </div>
-                    <div style={{ color: T.muted, fontSize: 12, fontFamily: F.mono }}>{s.email}</div>
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                      {s.enrolledCourses.map(cid => { const c = data.courses.find(x => x.id === cid); return c ? <Badge key={cid} color={c.color} sm>{c.title.split(" ")[0]}</Badge> : null; })}
-                      {s.enrolledCourses.length === 0 && <span style={{ color: T.muted, fontSize: 12 }}>—</span>}
-                    </div>
-                    <div>
-                      <div style={{ color: T.gold, fontSize: 11, fontFamily: F.mono, marginBottom: 4 }}>{pct}%</div>
-                      <Pill value={pct} height={4} />
-                    </div>
-                    <Badge color={s.status === "active" ? T.success : T.warn} sm>{s.status}</Badge>
-                    <div style={{ display: "flex", gap: 5 }}>
-                      <Btn sm variant="ghost" onClick={() => setModal({ type: "detail", s })}>View</Btn>
-                      {s.status === "pending" && <Btn sm variant="success" onClick={() => approve(s.id)}>✓</Btn>}
-                      <Btn sm variant="danger" onClick={() => remove(s.id)}>✕</Btn>
-                    </div>
+              {students.map((s, i) => (
+                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "13px 20px", borderBottom: `1px solid ${t.sep}`, alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Av name={s.name} size={28} t={t} />
+                    <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{s.name}</span>
                   </div>
-                );
-              })}
-            </div>
+                  <span style={{ fontSize: 13, color: t.sub, fontFamily: "ui-monospace, monospace" }}>{s.email}</span>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {(s.enrolled_courses || []).map(cid => { const c = courses.find(x => x.id === cid); return c ? <Tag key={cid} color={c.color || t.blue} t={t}>{c.title.split(" ")[0]}</Tag> : null; })}
+                    {!s.enrolled_courses?.length && <span style={{ color: t.muted, fontSize: 13 }}>—</span>}
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 13, color: t.blue }}>{pct(s)}%</span>
+                    <div style={{ marginTop: 5 }}><Track value={pct(s)} t={t} /></div>
+                  </div>
+                  <Tag color={s.status === "active" ? t.green : t.orange} t={t}>{s.status}</Tag>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Btn sm variant="secondary" onClick={() => setModal({ type: "detail", s })} t={t}>View</Btn>
+                    {s.status === "pending" && <Btn sm onClick={() => approve(s.id)} t={t}>✓</Btn>}
+                    <Btn sm variant="danger" onClick={() => remove(s.id)} t={t}>✕</Btn>
+                  </div>
+                </div>
+              ))}
+            </Card>
           </div>
         )}
 
-        {/* COURSES */}
         {tab === "courses" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div style={{ fontFamily: F.display, fontSize: 28, fontWeight: 700, color: T.text, marginBottom: 6 }}>Courses</div>
-            <div style={{ color: T.muted, fontSize: 13, marginBottom: 24 }}>{data.courses.length} courses published</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {data.courses.map(c => {
-                const lessons = c.chapters.flatMap(ch => ch.lessons);
-                const enrolled = data.students.filter(s => s.enrolledCourses.includes(c.id)).length;
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Courses</h1>
+            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>{courses.length} published</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {courses.map(c => {
+                const lessons = (c.chapters || []).flatMap(ch => ch.lessons || []);
+                const enrolled = students.filter(s => (s.enrolled_courses || []).includes(c.id)).length;
                 return (
-                  <div key={c.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, overflow: "hidden" }}>
-                    <div style={{ height: 3, background: c.color }} />
-                    <div style={{ padding: "20px 24px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+                  <Card key={c.id} t={t} style={{ overflow: "hidden" }}>
+                    <div style={{ height: 3, background: c.color || t.blue }} />
+                    <div style={{ padding: "22px 24px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                         <div>
-                          <div style={{ fontFamily: F.display, fontSize: 22, fontWeight: 700, color: T.text }}>{c.title}</div>
-                          <div style={{ color: T.muted, fontSize: 13, marginTop: 4 }}>{c.description}</div>
+                          <div style={{ fontSize: 19, fontWeight: 500, color: t.text, marginBottom: 5 }}>{c.title}</div>
+                          <div style={{ fontSize: 14, color: t.sub }}>{c.description}</div>
                         </div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <Badge color={c.color}>{lessons.length} Lessons</Badge>
-                          <Badge color={T.info}>{enrolled} Students</Badge>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 16 }}>
+                          <Tag color={c.color || t.blue} t={t}>{lessons.length} lessons</Tag>
+                          <Tag color={t.green} t={t}>{enrolled} students</Tag>
                         </div>
                       </div>
-                      {c.chapters.map(ch => (
-                        <div key={ch.id} style={{ background: T.surface, borderRadius: 10, padding: "12px 16px", marginBottom: 8 }}>
+                      {(c.chapters || []).map(ch => (
+                        <div key={ch.id} style={{ background: t.bg2, borderRadius: 10, padding: "12px 16px", marginBottom: 7 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                            <div style={{ fontFamily: F.body, fontWeight: 600, color: T.text, fontSize: 13 }}>{ch.title}</div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <Badge sm>{ch.lessons.length} lessons</Badge>
-                              {ch.quiz && <Badge color={T.warn} sm>Quiz</Badge>}
+                            <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{ch.title}</span>
+                            <div style={{ display: "flex", gap: 5 }}>
+                              <Tag color={t.sub} t={t}>{(ch.lessons || []).length} lessons</Tag>
+                              {ch.quiz && <Tag color={t.orange} t={t}>Quiz</Tag>}
                             </div>
                           </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {ch.lessons.map(l => (
-                              <div key={l.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 6, padding: "3px 10px", fontSize: 11, color: T.soft }}>
-                                🎬 {l.title} <span style={{ color: T.muted, fontFamily: F.mono }}>({l.duration})</span>
-                              </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                            {(ch.lessons || []).map(l => (
+                              <span key={l.id} style={{ background: t.card, border: `1px solid ${t.sep}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, color: t.sub }}>{l.title}</span>
                             ))}
                           </div>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </Card>
                 );
               })}
             </div>
           </div>
         )}
 
-        {/* ANALYTICS */}
+        {tab === "codes" && (
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Access Codes</h1>
+            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Generate codes for students after payment.</div>
+
+            {/* Generator */}
+            <Card t={t} style={{ padding: "24px", marginBottom: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: t.text, marginBottom: 20 }}>Generate New Codes</div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Course</label>
+                  <select value={genCourseId} onChange={e => setGenCourseId(e.target.value)}
+                    style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: genCourseId ? t.text : t.sub, fontSize: 15, cursor: "pointer" }}>
+                    <option value="">Select a course...</option>
+                    {courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Quantity</label>
+                  <input type="number" min="1" max="50" value={genCount} onChange={e => setGenCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                    style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15 }}
+                    onFocus={e => e.target.style.borderColor = t.blue}
+                    onBlur={e => e.target.style.borderColor = "transparent"} />
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <Btn onClick={generateCodes} disabled={!genCourseId} t={t}>Generate {genCount} Code{genCount > 1 ? "s" : ""}</Btn>
+                {generatedCodes.length > 0 && <Btn variant="secondary" onClick={copyAll} t={t}>Copy All</Btn>}
+              </div>
+
+              {/* Generated codes preview */}
+              {generatedCodes.length > 0 && (
+                <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: t.sub, marginBottom: 4 }}>Generated — click to copy</div>
+                  {generatedCodes.map(c => (
+                    <div key={c.id} onClick={() => copyCode(c.code)}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: t.bg2, borderRadius: 10, padding: "12px 16px", cursor: "pointer", transition: "background 0.15s", border: `1px solid ${copied === c.code ? t.green + "40" : "transparent"}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = t.bg3}
+                      onMouseLeave={e => e.currentTarget.style.background = t.bg2}>
+                      <span style={{ fontFamily: "ui-monospace, 'SF Mono', monospace", fontSize: 16, fontWeight: 500, color: t.text, letterSpacing: "0.1em" }}>{c.code}</span>
+                      <span style={{ fontSize: 12, color: copied === c.code ? t.green : t.sub }}>{copied === c.code ? "Copied!" : "Copy"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* All codes list */}
+            <Card t={t} style={{ overflow: "hidden" }}>
+              <div style={{ padding: "16px 22px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 15, fontWeight: 500, color: t.text }}>All Codes</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Tag color={t.green} t={t}>{codes.filter(c => !c.used).length} available</Tag>
+                  <Tag color={t.sub} t={t}>{codes.filter(c => c.used).length} used</Tag>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr", padding: "12px 22px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
+                {["Code", "Course", "Status", "Used by"].map(h => <span key={h} style={{ fontSize: 12, fontWeight: 500, color: t.sub }}>{h}</span>)}
+              </div>
+              {codes.length === 0 && (
+                <div style={{ padding: "40px", textAlign: "center", color: t.sub, fontSize: 14 }}>No codes generated yet.</div>
+              )}
+              {codes.map((c, i) => {
+                const course = courses.find(x => x.id === c.course_id);
+                return (
+                  <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr", padding: "13px 22px", borderBottom: `1px solid ${t.sep}`, alignItems: "center" }}>
+                    <span style={{ fontFamily: "ui-monospace, 'SF Mono', monospace", fontSize: 14, color: c.used ? t.muted : t.text, letterSpacing: "0.08em" }}>{c.code}</span>
+                    <span style={{ fontSize: 13, color: t.sub }}>{course?.title || "—"}</span>
+                    <Tag color={c.used ? t.sub : t.green} t={t}>{c.used ? "Used" : "Available"}</Tag>
+                    <span style={{ fontSize: 12, color: t.sub, fontFamily: "ui-monospace, monospace" }}>{c.used_by || "—"}</span>
+                  </div>
+                );
+              })}
+            </Card>
+          </div>
+        )}
+
         {tab === "analytics" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div style={{ fontFamily: F.display, fontSize: 28, fontWeight: 700, color: T.text, marginBottom: 24 }}>Analytics</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "22px 24px" }}>
-                <div style={{ fontFamily: F.body, fontWeight: 700, color: T.text, marginBottom: 18, fontSize: 14 }}>Course Completion</div>
-                {data.courses.map(c => {
-                  const cl = c.chapters.flatMap(ch => ch.lessons);
-                  const en = data.students.filter(s => s.enrolledCourses.includes(c.id));
-                  const avg = en.length ? Math.round(en.reduce((a, s) => a + ((s.progress[c.id]?.watched?.length || 0) / cl.length) * 100, 0) / en.length) : 0;
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 28 }}>Analytics</h1>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <Card t={t} style={{ padding: "22px 24px" }}>
+                <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 22 }}>Course completion</div>
+                {courses.map(c => {
+                  const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
+                  const en = students.filter(s => (s.enrolled_courses || []).includes(c.id));
+                  const avg = en.length ? Math.round(en.reduce((a, s) => a + (((s.progress || {})[c.id]?.watched?.length || 0) / (cl.length || 1)) * 100, 0) / en.length) : 0;
                   return (
-                    <div key={c.id} style={{ marginBottom: 16 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <span style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>{c.title}</span>
-                        <span style={{ color: c.color, fontFamily: F.mono, fontSize: 13 }}>{avg}%</span>
+                    <div key={c.id} style={{ marginBottom: 18 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
+                        <span style={{ fontSize: 14, color: t.text }}>{c.title}</span>
+                        <span style={{ fontSize: 13, color: c.color || t.blue }}>{avg}%</span>
                       </div>
-                      <Pill value={avg} color={c.color} height={7} />
-                      <div style={{ color: T.muted, fontSize: 11, marginTop: 4 }}>{en.length} enrolled</div>
+                      <Track value={avg} color={c.color || t.blue} height={5} t={t} />
+                      <div style={{ fontSize: 12, color: t.sub, marginTop: 4 }}>{en.length} enrolled</div>
                     </div>
                   );
                 })}
-              </div>
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "22px 24px" }}>
-                <div style={{ fontFamily: F.body, fontWeight: 700, color: T.text, marginBottom: 18, fontSize: 14 }}>Quiz Performance</div>
-                {data.courses.flatMap(c => c.chapters.filter(ch => ch.quiz).map(ch => {
-                  const scores = data.students.flatMap(s => { const sc = s.progress[c.id]?.quizScores?.[ch.quiz.id]; return sc !== undefined ? [sc] : []; });
-                  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
-                  return (
-                    <div key={ch.quiz.id} style={{ marginBottom: 14 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                        <span style={{ color: T.text, fontSize: 13 }}>{ch.quiz.title}</span>
-                        <span style={{ color: avg !== null ? (avg >= 70 ? T.success : T.error) : T.muted, fontFamily: F.mono, fontSize: 13 }}>{avg !== null ? `${avg}%` : "—"}</span>
-                      </div>
-                      {avg !== null && <Pill value={avg} color={avg >= 70 ? T.success : T.error} height={5} />}
-                      <div style={{ color: T.muted, fontSize: 11, marginTop: 4 }}>{scores.length} submissions</div>
+              </Card>
+              <Card t={t} style={{ padding: "22px 24px" }}>
+                <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 22 }}>Leaderboard</div>
+                {active.sort((a, b) => pct(b) - pct(a)).slice(0, 8).map((s, i) => (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: i > 0 ? `1px solid ${t.sep}` : "none" }}>
+                    <span style={{ fontSize: 13, color: t.muted, minWidth: 22, fontFamily: "ui-monospace, monospace" }}>#{i + 1}</span>
+                    <Av name={s.name} size={28} t={t} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: t.text, marginBottom: 4 }}>{s.name}</div>
+                      <Track value={pct(s)} t={t} />
                     </div>
-                  );
-                }))}
-              </div>
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "22px 24px", gridColumn: "1/-1" }}>
-                <div style={{ fontFamily: F.body, fontWeight: 700, color: T.text, marginBottom: 18, fontSize: 14 }}>🏆 Student Leaderboard</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-                  {active.sort((a, b) => {
-                    const wA = Object.values(a.progress).flatMap(p => p.watched || []).length;
-                    const wB = Object.values(b.progress).flatMap(p => p.watched || []).length;
-                    return wB - wA;
-                  }).map((s, i) => {
-                    const w = Object.values(s.progress).flatMap(p => p.watched || []).length;
-                    const pct = allLessons.length ? Math.round(w / allLessons.length * 100) : 0;
-                    return (
-                      <div key={s.id} style={{ background: T.surface, borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 10, border: i === 0 ? `1px solid ${T.goldBdr}` : `1px solid ${T.border}` }}>
-                        <span style={{ fontSize: 20 }}>{["🥇","🥈","🥉"][i] || "👤"}</span>
-                        <Av name={s.name} size={32} />
-                        <div>
-                          <div style={{ color: T.text, fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-                          <div style={{ color: T.gold, fontFamily: F.mono, fontSize: 12 }}>{pct}%</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                    <span style={{ fontSize: 13, color: t.blue }}>{pct(s)}%</span>
+                  </div>
+                ))}
+              </Card>
             </div>
           </div>
         )}
@@ -780,205 +941,260 @@ function Admin({ data, setData, onLogout }) {
   );
 }
 
-// ─── STUDENT ──────────────────────────────────────────────────────────────────
-function Student({ student, data, setData, onLogout }) {
+// ─── STUDENT ─────────────────────────────────────────────────────────
+function StudentView({ me: initMe, onLogout, t }) {
   const [tab, setTab] = useState("home");
-  const [openCourse, setOpenCourse] = useState(null);
+  const [me, setMe] = useState(initMe);
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(null);
   const [player, setPlayer] = useState(null);
-  const [quiz, setQuiz]  = useState(null);
+  const [quiz, setQuiz] = useState(null);
+  const [redeem, setRedeem] = useState(false);
+  const [redeemSuccess, setRedeemSuccess] = useState(null);
 
-  const me = data.students.find(s => s.id === student.id);
-  const myCourses = data.courses.filter(c => me.enrolledCourses.includes(c.id));
-  const allLessons = data.courses.flatMap(c => c.chapters.flatMap(ch => ch.lessons));
-  const totalW = Object.values(me.progress).flatMap(p => p.watched || []).length;
-  const overallPct = allLessons.length ? Math.round(totalW / allLessons.length * 100) : 0;
+  useEffect(() => { db.get("courses").then(c => { setCourses(c || []); setLoading(false); }); }, []);
 
-  const markWatched = (cid, lid) => setData(d => ({ ...d, students: d.students.map(s => {
-    if (s.id !== me.id) return s;
-    const cp = s.progress[cid] || { watched: [], quizScores: {} };
-    return { ...s, progress: { ...s.progress, [cid]: { ...cp, watched: cp.watched.includes(lid) ? cp.watched : [...cp.watched, lid] } } };
-  })}));
+  const mine = courses.filter(c => (me.enrolled_courses || []).includes(c.id));
+  const allL = courses.flatMap(c => (c.chapters || []).flatMap(ch => ch.lessons || []));
+  const totalW = Object.values(me.progress || {}).flatMap(p => p.watched || []).length;
+  const overallPct = allL.length ? Math.round(totalW / allL.length * 100) : 0;
 
-  const saveQuiz = (cid, qid, score) => setData(d => ({ ...d, students: d.students.map(s => {
-    if (s.id !== me.id) return s;
-    const cp = s.progress[cid] || { watched: [], quizScores: {} };
-    return { ...s, progress: { ...s.progress, [cid]: { ...cp, quizScores: { ...cp.quizScores, [qid]: score } } } };
-  })}));
+  const markWatched = async (cid, lid) => {
+    const cp = (me.progress || {})[cid] || { watched: [], quizScores: {} };
+    if (cp.watched.includes(lid)) return;
+    const np = { ...me.progress, [cid]: { ...cp, watched: [...cp.watched, lid] } };
+    await db.update("students", me.id, { progress: np });
+    setMe(m => ({ ...m, progress: np }));
+  };
 
-  if (player) return <VideoPlayer lesson={player.lesson} userEmail={me.email} onClose={() => setPlayer(null)} onComplete={() => markWatched(player.cid, player.lesson.id)} />;
-  if (quiz)   return <QuizModal quiz={quiz.q} courseId={quiz.cid} existing={me.progress[quiz.cid]?.quizScores?.[quiz.q.id]} onSubmit={s => saveQuiz(quiz.cid, quiz.q.id, s)} onClose={() => setQuiz(null)} />;
+  const saveQuiz = async (cid, qid, score) => {
+    const cp = (me.progress || {})[cid] || { watched: [], quizScores: {} };
+    const np = { ...me.progress, [cid]: { ...cp, quizScores: { ...cp.quizScores, [qid]: score } } };
+    await db.update("students", me.id, { progress: np });
+    setMe(m => ({ ...m, progress: np }));
+  };
 
-  const navs = [{ id: "home", icon: "⌂", label: "Home" }, { id: "courses", icon: "◧", label: "Courses" }, { id: "progress", icon: "◉", label: "Progress" }];
+  const onRedeemSuccess = async (courseTitle) => {
+    setRedeem(false);
+    setRedeemSuccess(courseTitle);
+    // Refresh enrollment
+    const updated = await db.get("students", { id: me.id });
+    if (updated?.[0]) setMe(updated[0]);
+    const updatedCourses = await db.get("courses");
+    setCourses(updatedCourses || []);
+    setTimeout(() => setRedeemSuccess(null), 4000);
+  };
+
+  if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner t={t} /></div>;
+  if (player) return <VideoPlayer lesson={player.lesson} userEmail={me.email} onClose={() => setPlayer(null)} onComplete={() => markWatched(player.cid, player.lesson.id)} t={t} />;
+  if (quiz) return <QuizModal quiz={quiz.q} existing={(me.progress || {})[quiz.cid]?.quizScores?.[quiz.q.id]} onSubmit={s => saveQuiz(quiz.cid, quiz.q.id, s)} onClose={() => setQuiz(null)} t={t} />;
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, paddingBottom: 80 }}>
-      <GS />
-      {/* Header */}
-      <div style={{ position: "sticky", top: 0, zIndex: 100, background: "rgba(8,8,9,0.96)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${T.border}`, padding: "13px 20px", display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ fontFamily: F.display, fontSize: 20, color: T.gold, letterSpacing: 2, fontWeight: 700 }}>AWAD</div>
-        <div style={{ flex: 1, display: "flex", justifyContent: "center", gap: 2 }}>
-          {navs.map(n => (
-            <button key={n.id} onClick={() => setTab(n.id)} style={{ background: tab === n.id ? T.goldDim : "none", border: tab === n.id ? `1px solid ${T.goldBdr}` : "1px solid transparent", borderRadius: 9, padding: "7px 14px", color: tab === n.id ? T.gold : T.muted, fontSize: 12, fontWeight: tab === n.id ? 600 : 400, display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s" }}>
-              <span style={{ fontFamily: F.mono }}>{n.icon}</span>{n.label}
-            </button>
-          ))}
+    <div style={{ minHeight: "100vh", background: t.bg }}>
+      {/* Redeem modal */}
+      {redeem && <RedeemModal studentId={me.id} studentEmail={me.email} courses={courses} onSuccess={onRedeemSuccess} onClose={() => setRedeem(false)} t={t} />}
+
+      {/* Success toast */}
+      {redeemSuccess && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: t.card, border: `1px solid ${t.green}25`, borderRadius: 12, padding: "14px 22px", display: "flex", alignItems: "center", gap: 10, boxShadow: t.shadowLg, animation: "fadeUp 0.3s ease" }}>
+          <span style={{ fontSize: 18 }}>🎉</span>
+          <span style={{ fontSize: 14, color: t.text, fontWeight: 500 }}><b>{redeemSuccess}</b> unlocked!</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Av name={me.name} size={30} />
-          <button onClick={onLogout} style={{ background: "none", border: "none", color: T.muted, fontSize: 12 }}>Out</button>
+      )}
+
+      {/* Nav */}
+      <div style={{ position: "sticky", top: 0, zIndex: 100, background: t.bg + "e8", backdropFilter: "blur(20px) saturate(180%)", borderBottom: `1px solid ${t.sep}`, WebkitBackdropFilter: "blur(20px) saturate(180%)" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", height: 52 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase", flexShrink: 0 }}>AWAD</div>
+          <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+            {[["home", "Home"], ["courses", "Courses"], ["progress", "Progress"]].map(([id, lb]) => (
+              <button key={id} onClick={() => setTab(id)} style={{ background: "none", border: "none", padding: "0 14px", height: 52, color: tab === id ? t.text : t.sub, fontSize: 14, fontWeight: tab === id ? 500 : 400, cursor: "pointer", borderBottom: `2px solid ${tab === id ? t.blue : "transparent"}`, transition: "all 0.15s", marginBottom: -1 }}>{lb}</button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={() => setRedeem(true)} style={{ background: t.blue, border: "none", borderRadius: 8, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>+ Enter Code</button>
+            <Av name={me.name} size={28} t={t} />
+            <button onClick={onLogout} style={{ background: "none", border: "none", color: t.sub, fontSize: 13, cursor: "pointer" }}>Sign out</button>
+          </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "28px 18px" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "36px 24px 80px" }}>
 
-        {/* HOME */}
         {tab === "home" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div style={{ marginBottom: 26 }}>
-              <div style={{ fontFamily: F.display, fontSize: 30, fontWeight: 700, color: T.text }}>Hello, {me.name.split(" ")[0]} 👋</div>
-              <div style={{ color: T.muted, fontSize: 14, marginTop: 4 }}>Continue your learning journey.</div>
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <div style={{ marginBottom: 32 }}>
+              <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Hello, {me.name?.split(" ")[0]}.</h1>
+              <div style={{ fontSize: 15, color: t.sub }}>Continue learning where you left off.</div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 26 }}>
-              <KPI icon="🎬" label="Lessons Watched" value={totalW} note="Total" />
-              <KPI icon="📈" label="Overall Progress" value={`${overallPct}%`} note="Complete" color={T.success} />
-              <KPI icon="📚" label="My Courses" value={myCourses.length} note="Enrolled" color={T.info} />
-            </div>
-            <div style={{ fontFamily: F.body, fontWeight: 700, color: T.text, fontSize: 15, marginBottom: 14 }}>Continue Learning</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {myCourses.map(c => {
-                const cl = c.chapters.flatMap(ch => ch.lessons);
-                const w = me.progress[c.id]?.watched || [];
-                const pct = Math.round((w.length / cl.length) * 100);
-                const next = cl.find(l => !w.includes(l.id));
-                return (
-                  <div key={c.id} onClick={() => { setTab("courses"); setOpenCourse(c.id); }}
-                    style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, overflow: "hidden", cursor: "pointer", transition: "border 0.2s" }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = c.color + "55"}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = T.border}>
-                    <div style={{ height: 3, background: c.color }} />
-                    <div style={{ padding: "16px 18px" }}>
-                      <div style={{ fontFamily: F.display, fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 8 }}>{c.title}</div>
-                      <Pill value={pct} color={c.color} />
-                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-                        <span style={{ color: T.muted, fontSize: 12 }}>{w.length}/{cl.length} lessons</span>
-                        <span style={{ color: c.color, fontFamily: F.mono, fontSize: 12 }}>{pct}%</span>
-                      </div>
-                      {next && <div style={{ color: T.soft, fontSize: 12, marginTop: 8 }}>▶ {next.title}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        {/* COURSES */}
-        {tab === "courses" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div style={{ fontFamily: F.display, fontSize: 28, fontWeight: 700, color: T.text, marginBottom: 22 }}>My Courses</div>
-            {myCourses.map(c => {
-              const sp = me.progress[c.id] || { watched: [], quizScores: {} };
-              const isOpen = openCourse === c.id;
-              return (
-                <div key={c.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
-                  <div style={{ height: 3, background: c.color }} />
-                  <div style={{ padding: "18px 22px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }} onClick={() => setOpenCourse(isOpen ? null : c.id)}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: F.display, fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 6 }}>{c.title}</div>
-                      <div style={{ width: 180 }}><Pill value={Math.round(((sp.watched?.length || 0) / c.chapters.flatMap(ch => ch.lessons).length) * 100)} color={c.color} /></div>
-                    </div>
-                    <Badge color={c.color}>{Math.round(((sp.watched?.length || 0) / c.chapters.flatMap(ch => ch.lessons).length) * 100)}%</Badge>
-                    <span style={{ color: T.muted, fontSize: 18, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none" }}>⌄</span>
-                  </div>
-                  {isOpen && (
-                    <div style={{ borderTop: `1px solid ${T.border}`, padding: "4px 22px 20px" }}>
-                      {c.chapters.map(ch => (
-                        <div key={ch.id} style={{ marginTop: 16 }}>
-                          <div style={{ color: T.muted, fontSize: 10, fontFamily: F.mono, letterSpacing: 2, marginBottom: 10 }}>{ch.title.toUpperCase()}</div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            {ch.lessons.map(l => {
-                              const watched = sp.watched?.includes(l.id);
-                              return (
-                                <div key={l.id} onClick={() => setPlayer({ lesson: l, cid: c.id })}
-                                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 15px", background: watched ? c.color + "0d" : T.surface, border: `1px solid ${watched ? c.color + "33" : T.border}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
-                                  onMouseEnter={e => e.currentTarget.style.borderColor = c.color + "55"}
-                                  onMouseLeave={e => e.currentTarget.style.borderColor = watched ? c.color + "33" : T.border}>
-                                  <span style={{ fontSize: 16 }}>{watched ? "✅" : "🎬"}</span>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ color: T.text, fontSize: 14, fontWeight: 600 }}>{l.title}</div>
-                                    <div style={{ color: T.muted, fontSize: 11, fontFamily: F.mono, marginTop: 2 }}>{l.duration}</div>
-                                  </div>
-                                  {watched && <Badge color={c.color} sm>Watched</Badge>}
-                                  <span style={{ color: T.muted }}>▶</span>
-                                </div>
-                              );
-                            })}
-                            {ch.quiz && (
-                              <div onClick={() => setQuiz({ q: ch.quiz, cid: c.id })}
-                                style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 15px", background: sp.quizScores?.[ch.quiz.id] !== undefined ? "rgba(212,175,55,0.06)" : T.surface, border: `1px solid ${sp.quizScores?.[ch.quiz.id] !== undefined ? T.goldBdr : T.border}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}>
-                                <span style={{ fontSize: 16 }}>📝</span>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ color: T.text, fontSize: 14, fontWeight: 600 }}>{ch.quiz.title}</div>
-                                  <div style={{ color: T.muted, fontSize: 11 }}>{ch.quiz.questions.length} questions</div>
-                                </div>
-                                {sp.quizScores?.[ch.quiz.id] !== undefined
-                                  ? <Badge color={sp.quizScores[ch.quiz.id] >= 70 ? T.success : T.error} sm>{sp.quizScores[ch.quiz.id]}%</Badge>
-                                  : <Badge color={T.gold} sm>Take Quiz</Badge>}
-                              </div>
-                            )}
-                          </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 28 }}>
+              <Stat label="Lessons completed" value={totalW} t={t} i={0} />
+              <Stat label="Overall progress" value={`${overallPct}%`} t={t} i={1} />
+              <Stat label="Courses enrolled" value={mine.length} t={t} i={2} />
+            </div>
+
+            {mine.length === 0 ? (
+              <Card t={t} style={{ padding: "48px 32px", textAlign: "center" }}>
+                <div style={{ fontSize: 40, marginBottom: 16 }}>📚</div>
+                <div style={{ fontSize: 19, fontWeight: 300, color: t.text, marginBottom: 8 }}>No courses yet</div>
+                <div style={{ fontSize: 14, color: t.sub, marginBottom: 22 }}>Enter your access code to unlock a course.</div>
+                <Btn onClick={() => setRedeem(true)} t={t}>Enter Access Code</Btn>
+              </Card>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {mine.map(c => {
+                  const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
+                  const w = (me.progress || {})[c.id]?.watched || [];
+                  const p = cl.length ? Math.round((w.length / cl.length) * 100) : 0;
+                  const next = cl.find(l => !w.includes(l.id));
+                  return (
+                    <Card key={c.id} t={t} hover style={{ overflow: "hidden", cursor: "pointer" }} onClick={() => { setTab("courses"); setOpen(c.id); }}>
+                      <div style={{ height: 3, background: c.color || t.blue }} />
+                      <div style={{ padding: "18px 20px" }}>
+                        <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 12 }}>{c.title}</div>
+                        <Track value={p} color={c.color || t.blue} t={t} />
+                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
+                          <span style={{ fontSize: 13, color: t.sub }}>{w.length}/{cl.length} lessons</span>
+                          <span style={{ fontSize: 13, color: c.color || t.blue }}>{p}%</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                        {next && <div style={{ marginTop: 12, fontSize: 13, color: t.sub, display: "flex", alignItems: "center", gap: 6 }}><span style={{ color: t.blue, fontSize: 10 }}>▶</span>{next.title}</div>}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
-        {/* PROGRESS */}
+        {tab === "courses" && (
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
+              <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em" }}>My Courses</h1>
+              <Btn variant="secondary" onClick={() => setRedeem(true)} t={t}>+ Enter Code</Btn>
+            </div>
+            {mine.length === 0 ? (
+              <Card t={t} style={{ padding: "48px", textAlign: "center" }}>
+                <div style={{ fontSize: 15, color: t.sub }}>No courses yet. Enter an access code to get started.</div>
+              </Card>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {mine.map(c => {
+                  const sp = (me.progress || {})[c.id] || { watched: [], quizScores: {} };
+                  const isOpen = open === c.id;
+                  const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
+                  const p = cl.length ? Math.round(((sp.watched?.length || 0) / cl.length) * 100) : 0;
+                  return (
+                    <Card key={c.id} t={t} style={{ overflow: "hidden" }}>
+                      <div style={{ height: 3, background: c.color || t.blue }} />
+                      <div style={{ padding: "18px 22px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : c.id)}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>{c.title}</div>
+                          <div style={{ width: 200 }}><Track value={p} color={c.color || t.blue} t={t} /></div>
+                        </div>
+                        <Tag color={c.color || t.blue} t={t}>{p}%</Tag>
+                        <span style={{ color: t.sub, transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "none", display: "inline-block", lineHeight: 1, fontSize: 16 }}>⌄</span>
+                      </div>
+                      {isOpen && (
+                        <div style={{ borderTop: `1px solid ${t.sep}`, padding: "10px 22px 20px" }}>
+                          {(c.chapters || []).map(ch => (
+                            <div key={ch.id} style={{ marginTop: 18 }}>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: t.sub, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 10 }}>{ch.title}</div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                                {(ch.lessons || []).map(l => {
+                                  const watched = sp.watched?.includes(l.id);
+                                  return (
+                                    <div key={l.id} onClick={() => setPlayer({ lesson: l, cid: c.id })}
+                                      style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: watched ? (c.color || t.blue) + "08" : t.bg2, border: `1.5px solid ${watched ? (c.color || t.blue) + "20" : "transparent"}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
+                                      onMouseEnter={e => { e.currentTarget.style.transform = "translateX(4px)"; }}
+                                      onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}>
+                                      <div style={{ width: 28, height: 28, borderRadius: 7, background: watched ? (c.color || t.blue) + "15" : t.bg3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: watched ? (c.color || t.blue) : t.sub, flexShrink: 0, fontWeight: 600 }}>
+                                        {watched ? "✓" : "▶"}
+                                      </div>
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{l.title}</div>
+                                        <div style={{ fontSize: 12, color: t.sub, marginTop: 2 }}>{l.duration}</div>
+                                      </div>
+                                      {watched && <Tag color={c.color || t.blue} t={t}>Done</Tag>}
+                                    </div>
+                                  );
+                                })}
+                                {ch.quiz && (
+                                  <div onClick={() => setQuiz({ q: ch.quiz, cid: c.id })}
+                                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: sp.quizScores?.[ch.quiz.id] !== undefined ? t.blueBg : t.bg2, border: `1.5px solid ${sp.quizScores?.[ch.quiz.id] !== undefined ? t.blue + "25" : "transparent"}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
+                                    onMouseEnter={e => e.currentTarget.style.transform = "translateX(4px)"}
+                                    onMouseLeave={e => e.currentTarget.style.transform = "none"}>
+                                    <div style={{ width: 28, height: 28, borderRadius: 7, background: t.blueBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>◈</div>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{ch.quiz.title}</div>
+                                      <div style={{ fontSize: 12, color: t.sub, marginTop: 2 }}>{ch.quiz.questions.length} questions</div>
+                                    </div>
+                                    {sp.quizScores?.[ch.quiz.id] !== undefined
+                                      ? <Tag color={sp.quizScores[ch.quiz.id] >= 70 ? t.green : t.red} t={t}>{sp.quizScores[ch.quiz.id]}%</Tag>
+                                      : <Tag color={t.blue} t={t}>Take Quiz</Tag>}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === "progress" && (
-          <div style={{ animation: "fadeIn 0.3s ease" }}>
-            <div style={{ fontFamily: F.display, fontSize: 28, fontWeight: 700, color: T.text, marginBottom: 22 }}>My Progress</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              {myCourses.map(c => {
-                const sp = me.progress[c.id] || { watched: [], quizScores: {} };
-                const cl = c.chapters.flatMap(ch => ch.lessons);
-                const pct = Math.round(((sp.watched?.length || 0) / cl.length) * 100);
-                const quizzes = c.chapters.filter(ch => ch.quiz);
-                const done = quizzes.filter(ch => sp.quizScores?.[ch.quiz.id] !== undefined).length;
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 28 }}>Progress</h1>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {mine.map(c => {
+                const sp = (me.progress || {})[c.id] || { watched: [], quizScores: {} };
+                const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
+                const p = cl.length ? Math.round(((sp.watched?.length || 0) / cl.length) * 100) : 0;
+                const quizzes = (c.chapters || []).filter(ch => ch.quiz);
+                const qDone = quizzes.filter(ch => sp.quizScores?.[ch.quiz.id] !== undefined).length;
                 return (
-                  <div key={c.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "20px 22px" }}>
-                    <div style={{ height: 2, background: c.color, borderRadius: 2, width: `${pct}%`, marginBottom: 16, transition: "width 0.6s ease" }} />
-                    <div style={{ fontFamily: F.display, fontSize: 20, fontWeight: 700, color: T.text, marginBottom: 14 }}>{c.title}</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <Card key={c.id} t={t} style={{ padding: "22px 24px" }}>
+                    <div style={{ height: 2, background: c.color || t.blue, width: `${p}%`, borderRadius: 2, marginBottom: 18, transition: "width 1s cubic-bezier(0.4,0,0.2,1)" }} />
+                    <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 18 }}>{c.title}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                          <span style={{ color: T.muted, fontSize: 13 }}>Video Lessons</span>
-                          <span style={{ color: c.color, fontFamily: F.mono, fontSize: 12 }}>{sp.watched?.length || 0}/{cl.length}</span>
+                          <span style={{ fontSize: 14, color: t.sub }}>Lessons</span>
+                          <span style={{ fontSize: 13, color: c.color || t.blue }}>{sp.watched?.length || 0} / {cl.length}</span>
                         </div>
-                        <Pill value={pct} color={c.color} />
+                        <Track value={p} color={c.color || t.blue} height={5} t={t} />
                       </div>
                       {quizzes.length > 0 && (
                         <div>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                            <span style={{ color: T.muted, fontSize: 13 }}>Quizzes</span>
-                            <span style={{ color: T.gold, fontFamily: F.mono, fontSize: 12 }}>{done}/{quizzes.length}</span>
+                            <span style={{ fontSize: 14, color: t.sub }}>Assessments</span>
+                            <span style={{ fontSize: 13, color: t.blue }}>{qDone} / {quizzes.length}</span>
                           </div>
-                          <Pill value={quizzes.length ? (done / quizzes.length) * 100 : 0} color={T.gold} />
+                          <Track value={quizzes.length ? (qDone / quizzes.length) * 100 : 0} height={5} t={t} />
                         </div>
                       )}
                       {quizzes.map(ch => sp.quizScores?.[ch.quiz.id] !== undefined && (
-                        <div key={ch.quiz.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: T.surface, borderRadius: 8 }}>
-                          <span style={{ color: T.soft, fontSize: 12 }}>{ch.quiz.title}</span>
-                          <Badge color={sp.quizScores[ch.quiz.id] >= 70 ? T.success : T.error} sm>{sp.quizScores[ch.quiz.id]}%</Badge>
+                        <div key={ch.quiz.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: t.bg2, borderRadius: 8 }}>
+                          <span style={{ fontSize: 13, color: t.sub }}>{ch.quiz.title}</span>
+                          <Tag color={sp.quizScores[ch.quiz.id] >= 70 ? t.green : t.red} t={t}>{sp.quizScores[ch.quiz.id]}%</Tag>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </Card>
                 );
               })}
+              {mine.length === 0 && (
+                <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "60px", color: t.sub, fontSize: 15 }}>
+                  No courses enrolled yet.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -987,16 +1203,26 @@ function Student({ student, data, setData, onLogout }) {
   );
 }
 
-// ─── ROOT ─────────────────────────────────────────────────────────────────────
+// ─── ROOT ────────────────────────────────────────────────────────────
 export default function App() {
-  const [data, setData] = useState(INIT);
+  const dark = useDark();
+  const theme = mk(dark);
+  const [splash, setSplash] = useState(true);
   const [session, setSession] = useState(null);
-  const [splashing, setSplashing] = useState(true);
 
-  useEffect(() => { setTimeout(() => setSplashing(false), 2400); }, []);
+  useEffect(() => { setTimeout(() => setSplash(false), 1800); }, []);
 
-  if (splashing) return <><GS /><Splash /></>;
-  if (!session)  return <Login data={data} onLogin={(role, user) => setSession({ role, user })} />;
-  if (session.role === "admin")   return <Admin   data={data} setData={setData} onLogout={() => setSession(null)} />;
-  if (session.role === "student") return <Student student={session.user} data={data} setData={setData} onLogout={() => setSession(null)} />;
+  return (
+    <>
+      <GS dark={dark} />
+      {splash
+        ? <Splash t={theme} />
+        : !session
+          ? <Auth onLogin={(role, user) => setSession({ role, user })} t={theme} />
+          : session.role === "admin"
+            ? <Admin me={session.user} onLogout={() => setSession(null)} t={theme} />
+            : <StudentView me={session.user} onLogout={() => setSession(null)} t={theme} />
+      }
+    </>
+  );
 }
