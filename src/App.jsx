@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── SUPABASE ────────────────────────────────────────────────────────
 const SB_URL = "https://nxyhstdngyjylryiqzvx.supabase.co";
@@ -23,6 +23,12 @@ const db = {
   del: (t, id) => fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`, { method: "DELETE", headers: H }),
 };
 
+// ─── PERSISTENT SESSION ──────────────────────────────────────────────
+const SESSION_KEY = "awad_session";
+const saveSession  = s => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch {} };
+const loadSession  = ()  => { try { const s = localStorage.getItem(SESSION_KEY); return s ? JSON.parse(s) : null; } catch { return null; } };
+const clearSession = ()  => { try { localStorage.removeItem(SESSION_KEY); } catch {} };
+
 // ─── CLOUDFLARE R2 ───────────────────────────────────────────────────
 const R2_ENDPOINT = "3f8fd387dc687cccf32ce100b90da373.r2.cloudflarestorage.com";
 const R2_BUCKET   = "awad-videos";
@@ -35,45 +41,35 @@ async function sha256hex(data) {
   const hash = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
-
 async function hmac(key, msg) {
   const k = await crypto.subtle.importKey("raw", typeof key === "string" ? new TextEncoder().encode(key) : key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC", k, typeof msg === "string" ? new TextEncoder().encode(msg) : msg));
 }
-
 async function signingKey(secret, date, region, service) {
   let k = await hmac("AWS4" + secret, date);
   k = await hmac(k, region);
   k = await hmac(k, service);
   return hmac(k, "aws4_request");
 }
-
 async function uploadToR2(file, onProgress) {
   const ext = file.name.split(".").pop();
   const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
   const fileBuffer = await file.arrayBuffer();
   const payloadHash = await sha256hex(new Uint8Array(fileBuffer));
-
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, "").slice(0, 15) + "Z";
   const dateStamp = amzDate.slice(0, 8);
   const region = "auto";
-
   const canonicalUri = `/${R2_BUCKET}/${fileName}`;
   const canonicalHeaders = `content-type:${file.type}\nhost:${R2_ENDPOINT}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
   const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
   const canonicalRequest = `PUT\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-
   const credScope = `${dateStamp}/${region}/s3/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credScope}\n${await sha256hex(canonicalRequest)}`;
-
   const sk = await signingKey(R2_SECRET, dateStamp, region, "s3");
   const sigBytes = await hmac(sk, stringToSign);
   const signature = Array.from(sigBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-
   const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  // XHR for progress tracking
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", `https://${R2_ENDPOINT}/${R2_BUCKET}/${fileName}`);
@@ -82,7 +78,7 @@ async function uploadToR2(file, onProgress) {
     xhr.setRequestHeader("x-amz-content-sha256", payloadHash);
     xhr.setRequestHeader("x-amz-date", amzDate);
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100)); };
-    xhr.onload = () => xhr.status < 300 ? resolve(`${R2_PUBLIC}/${fileName}`) : reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+    xhr.onload = () => xhr.status < 300 ? resolve(`${R2_PUBLIC}/${fileName}`) : reject(new Error(`Upload failed: ${xhr.status}`));
     xhr.onerror = () => reject(new Error("Network error"));
     xhr.send(fileBuffer);
   });
@@ -132,10 +128,10 @@ const mk = dark => ({
 const GS = ({ dark }) => (
   <style>{`
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html{color-scheme:${dark?"dark":"light"}}
-    body{background:${dark?"#000":"#fff"};font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:17px;line-height:1.47059;letter-spacing:-0.022em}
+    html{color-scheme:${dark ? "dark" : "light"}}
+    body{background:${dark ? "#000" : "#fff"};font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:17px;line-height:1.47059;letter-spacing:-0.022em}
     ::-webkit-scrollbar{width:4px}
-    ::-webkit-scrollbar-thumb{background:${dark?"rgba(255,255,255,0.15)":"rgba(0,0,0,0.12)"};border-radius:4px}
+    ::-webkit-scrollbar-thumb{background:${dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.12)"};border-radius:4px}
     input,button,textarea,select{font-family:inherit;letter-spacing:inherit}
     input:focus,textarea:focus,select:focus{outline:none}
     button{cursor:pointer}
@@ -144,6 +140,10 @@ const GS = ({ dark }) => (
     @keyframes fade{from{opacity:0}to{opacity:1}}
     @keyframes scaleIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
     @keyframes spin{to{transform:rotate(360deg)}}
+    .vid-ctrl{opacity:0;transition:opacity 0.25s}
+    .vid-wrap:hover .vid-ctrl{opacity:1}
+    .vid-wrap:fullscreen .vid-ctrl{opacity:1}
+    .speed-btn:hover{background:rgba(255,255,255,0.15)!important}
   `}</style>
 );
 
@@ -154,7 +154,12 @@ const Spinner = ({ size = 20, color }) => (
 
 const Btn = ({ children, onClick, disabled, full, sm, variant = "primary", t }) => {
   const [hov, setHov] = useState(false);
-  const s = { primary: { bg: hov ? "#0077ed" : t.blue, color: "#fff", border: "none" }, secondary: { bg: hov ? t.bg3 : t.bg2, color: t.text, border: `1px solid ${t.sep}` }, danger: { bg: hov ? t.redBg : "transparent", color: t.red, border: `1px solid ${t.red}30` }, ghost: { bg: hov ? t.bg2 : "transparent", color: t.sub, border: "none" } }[variant];
+  const s = {
+    primary:   { bg: hov ? "#0077ed" : t.blue, color: "#fff", border: "none" },
+    secondary: { bg: hov ? t.bg3 : t.bg2, color: t.text, border: `1px solid ${t.sep}` },
+    danger:    { bg: hov ? t.redBg : "transparent", color: t.red, border: `1px solid ${t.red}30` },
+    ghost:     { bg: hov ? t.bg2 : "transparent", color: t.sub, border: "none" },
+  }[variant];
   return (
     <button onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick} disabled={disabled}
       style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: s.bg, color: s.color, border: s.border || "none", borderRadius: sm ? 8 : 12, padding: sm ? "6px 14px" : "12px 22px", fontSize: sm ? 13 : 15, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, transition: "all 0.15s", width: full ? "100%" : "auto", whiteSpace: "nowrap" }}>
@@ -233,6 +238,7 @@ function Auth({ onLogin, t }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
+  const [keep, setKeep] = useState(true);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -241,12 +247,14 @@ function Auth({ onLogin, t }) {
     setErr(""); setLoading(true);
     try {
       const admins = await db.get("admins", { email });
-      if (admins?.length && admins[0].password === pass) { setLoading(false); return onLogin("admin", admins[0]); }
+      if (admins?.length && admins[0].password === pass) {
+        setLoading(false);
+        return onLogin("admin", admins[0], keep);
+      }
       const studs = await db.get("students", { email });
       if (studs?.length && studs[0].password === pass) {
         setLoading(false);
-        if (studs[0].status === "pending") return setErr("Your account is pending approval.");
-        return onLogin("student", studs[0]);
+        return onLogin("student", studs[0], keep);
       }
       setErr("Incorrect email or password.");
     } catch { setErr("Something went wrong. Please try again."); }
@@ -260,8 +268,12 @@ function Auth({ onLogin, t }) {
     try {
       const ex = await db.get("students", { email });
       if (ex?.length) { setLoading(false); return setErr("An account with this email already exists."); }
-      await db.insert("students", { name, email, password: pass, status: "pending", enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {} });
-      setDone(true);
+      const result = await db.insert("students", { name, email, password: pass, status: "active", enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {} });
+      if (result?.[0]) {
+        onLogin("student", result[0], keep);
+      } else {
+        setDone(true);
+      }
     } catch { setErr("Something went wrong. Please try again."); }
     setLoading(false);
   };
@@ -287,14 +299,14 @@ function Auth({ onLogin, t }) {
             {done ? (
               <div style={{ textAlign: "center", animation: "scaleIn 0.3s ease" }}>
                 <div style={{ width: 52, height: 52, borderRadius: "50%", background: t.greenBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: t.green }}>✓</div>
-                <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>Account requested</div>
-                <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5, marginBottom: 22 }}>Your account will be activated shortly.</div>
-                <Btn variant="secondary" onClick={() => { setMode("login"); setDone(false); }} t={t}>Back to Sign In</Btn>
+                <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>Account created</div>
+                <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5, marginBottom: 22 }}>You can now sign in with your credentials.</div>
+                <Btn variant="secondary" onClick={() => { setMode("login"); setDone(false); }} t={t}>Sign In</Btn>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <button onClick={oauth}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 10, padding: 11, color: t.text, fontSize: 15, fontWeight: 400, cursor: "pointer", transition: "background 0.15s" }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 10, padding: 11, color: t.text, fontSize: 15, cursor: "pointer", transition: "background 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.background = t.bg3}
                   onMouseLeave={e => e.currentTarget.style.background = t.bg2}>
                   <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
@@ -306,6 +318,13 @@ function Auth({ onLogin, t }) {
                 {mode === "signup" && <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" t={t} />}
                 <Input label="Email" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@example.com" t={t} autoFocus={mode === "login"} />
                 <Input label="Password" value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••••" t={t} />
+
+                {/* Keep me signed in */}
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                  <input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)} style={{ accentColor: t.blue, width: 15, height: 15 }} />
+                  <span style={{ fontSize: 14, color: t.sub }}>Keep me signed in</span>
+                </label>
+
                 {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
                 <Btn onClick={mode === "login" ? login : signup} disabled={loading} full t={t}>
                   {loading ? <Spinner size={16} color="#fff" /> : mode === "login" ? "Sign In" : "Create Account"}
@@ -321,119 +340,283 @@ function Auth({ onLogin, t }) {
 
 // ─── VIDEO PLAYER ────────────────────────────────────────────────────
 function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
-  const videoRef = useRef(null);
-  const [playing, setPlaying] = useState(false);
-  const [prog, setProg] = useState(0);
-  const [done, setDone] = useState(false);
-  const hasVideo = !!lesson.video_url;
+  const videoRef   = useRef(null);
+  const wrapRef    = useRef(null);
+  const seekRef    = useRef(null);
+  const hideTimer  = useRef(null);
 
-  // Simulated player for lessons without real video
-  const [simProg, setSimProg] = useState(0);
-  const iv = useRef(null);
-  useEffect(() => {
-    if (!hasVideo) {
-      if (playing && !done) {
-        iv.current = setInterval(() => setSimProg(p => {
-          if (p >= 100) { clearInterval(iv.current); setPlaying(false); setDone(true); onComplete?.(); return 100; }
-          return p + 0.07;
-        }), 100);
-      } else clearInterval(iv.current);
-      return () => clearInterval(iv.current);
-    }
-  }, [playing, done, hasVideo]);
+  const [playing,    setPlaying]    = useState(false);
+  const [currentTime,setCurrentTime]= useState(0);
+  const [duration,   setDuration]   = useState(0);
+  const [buffered,   setBuffered]   = useState(0);
+  const [volume,     setVolume]     = useState(1);
+  const [muted,      setMuted]      = useState(false);
+  const [speed,      setSpeed]      = useState(1);
+  const [showSpeed,  setShowSpeed]  = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [showCtrl,   setShowCtrl]   = useState(true);
+  const [done,       setDone]       = useState(false);
+  const [loading,    setLoading]    = useState(true);
 
-  const handleVideoEnd = () => { setDone(true); onComplete?.(); };
-  const handleTimeUpdate = () => {
-    if (videoRef.current) {
-      const p = (videoRef.current.currentTime / videoRef.current.duration) * 100;
-      setProg(isNaN(p) ? 0 : p);
-      if (p >= 99) { setDone(true); onComplete?.(); }
-    }
+  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+  const fmt = s => {
+    if (!s || isNaN(s)) return "0:00";
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}` : `${m}:${String(sec).padStart(2,"0")}`;
   };
+
+  const resetHideTimer = useCallback(() => {
+    setShowCtrl(true);
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => { if (playing) setShowCtrl(false); }, 3000);
+  }, [playing]);
+
+  useEffect(() => { return () => clearTimeout(hideTimer.current); }, []);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onLoaded   = () => { setDuration(v.duration); setLoading(false); };
+    const onTime     = () => {
+      setCurrentTime(v.currentTime);
+      if (v.buffered.length) setBuffered((v.buffered.end(v.buffered.length - 1) / v.duration) * 100);
+      if (!done && v.currentTime / v.duration > 0.97) { setDone(true); onComplete?.(); }
+    };
+    const onPlay     = () => setPlaying(true);
+    const onPause    = () => { setPlaying(false); setShowCtrl(true); };
+    const onWaiting  = () => setLoading(true);
+    const onPlaying  = () => setLoading(false);
+    const onEnded    = () => { setDone(true); setPlaying(false); setShowCtrl(true); onComplete?.(); };
+    v.addEventListener("loadedmetadata", onLoaded);
+    v.addEventListener("timeupdate", onTime);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("ended", onEnded);
+    return () => {
+      v.removeEventListener("loadedmetadata", onLoaded);
+      v.removeEventListener("timeupdate", onTime);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("ended", onEnded);
+    };
+  }, [done]);
+
+  useEffect(() => {
+    const onFS = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFS);
+    return () => document.removeEventListener("fullscreenchange", onFS);
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = e => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (e.code === "Space") { e.preventDefault(); v.paused ? v.play() : v.pause(); resetHideTimer(); }
+      if (e.code === "ArrowRight") { v.currentTime = Math.min(v.duration, v.currentTime + 10); resetHideTimer(); }
+      if (e.code === "ArrowLeft")  { v.currentTime = Math.max(0, v.currentTime - 10); resetHideTimer(); }
+      if (e.code === "KeyF") toggleFS();
+      if (e.code === "KeyM") toggleMute();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const togglePlay = () => {
-    if (hasVideo && videoRef.current) {
-      playing ? videoRef.current.pause() : videoRef.current.play();
-      setPlaying(p => !p);
-    } else {
-      setPlaying(p => !p);
-    }
+    const v = videoRef.current;
+    if (!v) return;
+    v.paused ? v.play() : v.pause();
+    resetHideTimer();
   };
 
-  const displayProg = hasVideo ? prog : simProg;
-  const total = (() => { const [m, s] = (lesson.duration || "10:00").split(":").map(Number); return m * 60 + s; })();
-  const cur = Math.floor((displayProg / 100) * total);
-  const fmt = n => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+  const toggleMute = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+  };
+
+  const setVol = val => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.volume = val;
+    v.muted = val === 0;
+    setVolume(val);
+    setMuted(val === 0);
+  };
+
+  const setSpd = s => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.playbackRate = s;
+    setSpeed(s);
+    setShowSpeed(false);
+  };
+
+  const seek = e => {
+    const v = videoRef.current;
+    if (!v || !seekRef.current) return;
+    const r = seekRef.current.getBoundingClientRect();
+    const p = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    v.currentTime = p * v.duration;
+    resetHideTimer();
+  };
+
+  const toggleFS = () => {
+    if (!document.fullscreenElement) wrapRef.current?.requestFullscreen();
+    else document.exitFullscreen();
+  };
+
+  const pct = duration ? (currentTime / duration) * 100 : 0;
+
+  const VIcon = ({ d, size = 20 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><path d={d} /></svg>
+  );
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#000", display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-        {/* Real video */}
-        {hasVideo && (
-          <video ref={videoRef} src={lesson.video_url} onTimeUpdate={handleTimeUpdate} onEnded={handleVideoEnd}
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
-            onClick={togglePlay} playsInline />
-        )}
+    <div ref={wrapRef} className="vid-wrap"
+      style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#000", display: "flex", flexDirection: "column", userSelect: "none" }}
+      onMouseMove={resetHideTimer}
+      onClick={() => { setShowSpeed(false); }}>
 
-        {/* Fallback canvas */}
-        {!hasVideo && (
-          <div style={{ position: "absolute", inset: 0, background: "#050505", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} onClick={togglePlay}>
-            {!playing && !done && (
-              <div style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22 }}>▶</div>
-            )}
+      {/* Video element */}
+      {lesson.video_url ? (
+        <video ref={videoRef} src={lesson.video_url}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
+          onClick={e => { e.stopPropagation(); togglePlay(); }}
+          playsInline />
+      ) : (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} onClick={togglePlay}>
+          <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
+            <div style={{ fontSize: 15 }}>No video uploaded yet</div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Watermark */}
-        {[...Array(5)].map((_, i) => (
-          <div key={i} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" }}>
-            <div style={{ color: "rgba(255,255,255,0.022)", fontSize: 11, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 3, transform: `rotate(-15deg) translateY(${(i - 2) * 120}px)` }}>
-              {[...Array(10)].fill(userEmail).join("  ·  ")}
-            </div>
+      {/* Watermark */}
+      {[...Array(6)].map((_, i) => (
+        <div key={i} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" }}>
+          <div style={{ color: "rgba(255,255,255,0.018)", fontSize: 11, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 3, transform: `rotate(-15deg) translateY(${(i - 2.5) * 110}px)` }}>
+            {[...Array(12)].fill(userEmail).join("  ·  ")}
           </div>
-        ))}
+        </div>
+      ))}
+
+      {/* Buffering spinner */}
+      {loading && lesson.video_url && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <Spinner size={36} color="rgba(255,255,255,0.6)" />
+        </div>
+      )}
+
+      {/* Completion overlay */}
+      {done && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.82)", backdropFilter: "blur(8px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, zIndex: 10 }}>
+          <div style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(48,209,88,0.15)", border: "1.5px solid rgba(48,209,88,0.35)", display: "flex", alignItems: "center", justifyContent: "center", color: "#30d158", fontSize: 28 }}>✓</div>
+          <div style={{ color: "#fff", fontSize: 24, fontWeight: 300 }}>Lecture complete</div>
+          <button onClick={onClose} style={{ background: "#fff", border: "none", borderRadius: 14, padding: "13px 32px", color: "#000", fontSize: 15, fontWeight: 500, cursor: "pointer" }}>Continue</button>
+        </div>
+      )}
+
+      {/* Controls overlay */}
+      <div className="vid-ctrl" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", opacity: showCtrl ? 1 : 0, transition: "opacity 0.3s", pointerEvents: showCtrl ? "auto" : "none" }}>
 
         {/* Top bar */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "16px 20px", background: "linear-gradient(to bottom,rgba(0,0,0,0.75),transparent)", display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>← Back</button>
-          <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 15, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
+        <div style={{ background: "linear-gradient(to bottom,rgba(0,0,0,0.8),transparent)", padding: "16px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+          <button onClick={onClose}
+            style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
+            ← Back
+          </button>
+          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 15, fontWeight: 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
+          {speed !== 1 && <span style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "3px 10px", color: "#fff", fontSize: 13, fontFamily: "ui-monospace,monospace" }}>{speed}×</span>}
         </div>
 
-        {/* Play overlay for real video */}
-        {hasVideo && !playing && !done && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} onClick={togglePlay}>
-            <div style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(0,0,0,0.5)", border: "1.5px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, backdropFilter: "blur(4px)" }}>▶</div>
-          </div>
-        )}
+        {/* Bottom controls */}
+        <div style={{ background: "linear-gradient(to top,rgba(0,0,0,0.9),transparent)", padding: "0 20px 18px" }}>
 
-        {done && (
-          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(48,209,88,0.15)", border: "1.5px solid rgba(48,209,88,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#30d158", fontSize: 26 }}>✓</div>
-            <div style={{ color: "#fff", fontSize: 22, fontWeight: 300 }}>Lesson complete</div>
-            <button onClick={onClose} style={{ background: "#fff", border: "none", borderRadius: 12, padding: "12px 28px", color: "#000", fontSize: 15, fontWeight: 500, cursor: "pointer" }}>Continue</button>
+          {/* Seek bar */}
+          <div ref={seekRef} onClick={seek}
+            style={{ height: 4, background: "rgba(255,255,255,0.2)", borderRadius: 4, marginBottom: 14, cursor: "pointer", position: "relative", overflow: "visible" }}
+            onMouseEnter={e => e.currentTarget.style.height = "6px"}
+            onMouseLeave={e => e.currentTarget.style.height = "4px"}>
+            {/* Buffered */}
+            <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${buffered}%`, background: "rgba(255,255,255,0.3)", borderRadius: 4 }} />
+            {/* Progress */}
+            <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${pct}%`, background: "#fff", borderRadius: 4 }}>
+              <div style={{ position: "absolute", right: -6, top: "50%", transform: "translateY(-50%)", width: 12, height: 12, borderRadius: "50%", background: "#fff", boxShadow: "0 0 6px rgba(0,0,0,0.5)" }} />
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Controls */}
-      <div style={{ background: "#111", borderTop: "1px solid rgba(255,255,255,0.06)", padding: "14px 20px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36 }}>{fmt(cur)}</span>
-          <div style={{ flex: 1, height: 3, background: "rgba(255,255,255,0.1)", borderRadius: 3, cursor: "pointer", position: "relative" }}
-            onClick={e => {
-              const r = e.currentTarget.getBoundingClientRect();
-              const p = ((e.clientX - r.left) / r.width) * 100;
-              if (hasVideo && videoRef.current) { videoRef.current.currentTime = (p / 100) * videoRef.current.duration; setProg(p); }
-              else setSimProg(p);
-            }}>
-            <div style={{ width: `${displayProg}%`, height: "100%", background: "#fff", borderRadius: 3 }} />
+          {/* Controls row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Play/Pause */}
+            <button onClick={e => { e.stopPropagation(); togglePlay(); }}
+              style={{ background: "none", border: "none", color: "#fff", fontSize: 22, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+              {playing ? "⏸" : "▶"}
+            </button>
+
+            {/* Skip back */}
+            <button onClick={e => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime -= 10; }}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "6px 10px", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 4 }}>
+              ↺ 10s
+            </button>
+
+            {/* Skip forward */}
+            <button onClick={e => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime += 10; }}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "6px 10px", cursor: "pointer", borderRadius: 6 }}>
+              10s ↻
+            </button>
+
+            {/* Volume */}
+            <button onClick={e => { e.stopPropagation(); toggleMute(); }}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 16, padding: "6px 8px", cursor: "pointer" }}>
+              {muted || volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
+            </button>
+            <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume}
+              onChange={e => setVol(parseFloat(e.target.value))}
+              onClick={e => e.stopPropagation()}
+              style={{ width: 70, accentColor: "#fff", cursor: "pointer" }} />
+
+            {/* Time */}
+            <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, fontFamily: "ui-monospace,monospace", marginLeft: 4, flexShrink: 0 }}>
+              {fmt(currentTime)} / {fmt(duration)}
+            </span>
+
+            <div style={{ flex: 1 }} />
+
+            {/* Speed */}
+            <div style={{ position: "relative" }}>
+              <button onClick={e => { e.stopPropagation(); setShowSpeed(s => !s); }}
+                style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 7, color: "#fff", padding: "5px 12px", fontSize: 13, fontFamily: "ui-monospace,monospace", cursor: "pointer", fontWeight: 500 }}>
+                {speed}×
+              </button>
+              {showSpeed && (
+                <div onClick={e => e.stopPropagation()}
+                  style={{ position: "absolute", bottom: "calc(100% + 10px)", right: 0, background: "rgba(30,30,30,0.96)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, overflow: "hidden", minWidth: 100, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+                  {SPEEDS.map(s => (
+                    <button key={s} onClick={() => setSpd(s)} className="speed-btn"
+                      style={{ display: "block", width: "100%", background: speed === s ? "rgba(255,255,255,0.12)" : "transparent", border: "none", color: speed === s ? "#fff" : "rgba(255,255,255,0.7)", padding: "10px 18px", fontSize: 14, fontFamily: "ui-monospace,monospace", cursor: "pointer", textAlign: "left", fontWeight: speed === s ? 600 : 400, transition: "background 0.1s" }}>
+                      {s === 1 ? "1× Normal" : `${s}×`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Fullscreen */}
+            <button onClick={e => { e.stopPropagation(); toggleFS(); }}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 18, padding: "6px 8px", cursor: "pointer" }}>
+              {fullscreen ? "⛶" : "⛶"}
+            </button>
           </div>
-          <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36, textAlign: "right" }}>{lesson.duration}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => { if (hasVideo && videoRef.current) videoRef.current.currentTime -= 10; else setSimProg(p => Math.max(0, p - 4)); }} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>−10s</button>
-          <button onClick={togglePlay} style={{ background: "rgba(255,255,255,0.9)", border: "none", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#000", cursor: "pointer" }}>{playing ? "⏸" : "▶"}</button>
-          <button onClick={() => { if (hasVideo && videoRef.current) videoRef.current.currentTime += 10; else setSimProg(p => Math.min(100, p + 4)); }} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>+10s</button>
         </div>
       </div>
     </div>
@@ -527,7 +710,7 @@ function RedeemModal({ studentId, studentEmail, courses, onSuccess, onClose, t }
         </div>
         <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5 }}>Enter the code you received to unlock your course.</div>
-          <Input label="Access Code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX" t={t} autoFocus hint="Codes are not case-sensitive" />
+          <Input label="Access Code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX" t={t} autoFocus />
           {err && <div style={{ background: t.redBg, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
           <Btn onClick={redeem} disabled={loading || !code.trim()} full t={t}>
             {loading ? <Spinner size={16} color="#fff" /> : "Unlock Course"}
@@ -545,7 +728,6 @@ function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t })
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
-  const [url, setUrl] = useState(lesson.video_url || "");
   const fileRef = useRef();
 
   const upload = async () => {
@@ -553,15 +735,12 @@ function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t })
     setErr(""); setUploading(true);
     try {
       const videoUrl = await uploadToR2(file, setProgress);
-      // Update lesson in course
       const course = courses.find(c => c.id === courseId);
       const updatedChapters = (course.chapters || []).map(ch => ({
-        ...ch,
-        lessons: (ch.lessons || []).map(l => l.id === lesson.id ? { ...l, video_url: videoUrl, duration: l.duration } : l)
+        ...ch, lessons: (ch.lessons || []).map(l => l.id === lesson.id ? { ...l, video_url: videoUrl } : l)
       }));
       await db.update("courses", courseId, { chapters: updatedChapters });
       setCourses(prev => prev.map(c => c.id === courseId ? { ...c, chapters: updatedChapters } : c));
-      setUrl(videoUrl);
       setDone(true);
     } catch (e) { setErr(e.message || "Upload failed."); }
     setUploading(false);
@@ -581,21 +760,17 @@ function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t })
           {done ? (
             <div style={{ textAlign: "center" }}>
               <div style={{ width: 52, height: 52, borderRadius: "50%", background: t.greenBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: t.green }}>✓</div>
-              <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>Video uploaded</div>
-              <div style={{ fontSize: 13, color: t.sub, marginBottom: 4, wordBreak: "break-all", fontFamily: "ui-monospace,monospace" }}>{url}</div>
-              <div style={{ marginTop: 16 }}><Btn variant="secondary" onClick={onClose} t={t}>Done</Btn></div>
+              <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 16 }}>Video uploaded</div>
+              <Btn variant="secondary" onClick={onClose} t={t}>Done</Btn>
             </div>
           ) : (
             <>
-              {/* Current video */}
               {lesson.video_url && !file && (
                 <div style={{ background: t.greenBg, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ color: t.green }}>✓</span>
-                  <span style={{ fontSize: 13, color: t.green }}>Video already uploaded — upload again to replace</span>
+                  <span style={{ fontSize: 13, color: t.green }}>Already uploaded — drop a new file to replace</span>
                 </div>
               )}
-
-              {/* File drop zone */}
               <div onClick={() => fileRef.current.click()}
                 style={{ border: `2px dashed ${file ? t.blue : t.sep}`, borderRadius: 14, padding: "32px 20px", textAlign: "center", cursor: "pointer", background: file ? t.blueBg : "transparent", transition: "all 0.15s" }}
                 onDragOver={e => e.preventDefault()}
@@ -611,12 +786,10 @@ function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t })
                   <div>
                     <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
                     <div style={{ fontSize: 15, fontWeight: 500, color: t.text }}>Drop video here</div>
-                    <div style={{ fontSize: 13, color: t.sub, marginTop: 4 }}>or click to browse — MP4, MOV, WebM</div>
+                    <div style={{ fontSize: 13, color: t.sub, marginTop: 4 }}>or click to browse</div>
                   </div>
                 )}
               </div>
-
-              {/* Progress bar */}
               {uploading && (
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -626,9 +799,7 @@ function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t })
                   <Track value={progress} t={t} h={5} />
                 </div>
               )}
-
               {err && <div style={{ background: t.redBg, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
-
               <Btn onClick={upload} disabled={!file || uploading} full t={t}>
                 {uploading ? <><Spinner size={16} color="#fff" /> Uploading {progress}%</> : "Upload to R2"}
               </Btn>
@@ -663,8 +834,8 @@ function Admin({ me, onLogout, t }) {
   }, []);
 
   const approve = async id => { await db.update("students", id, { status: "active" }); setStudents(s => s.map(x => x.id === id ? { ...x, status: "active" } : x)); notify("Approved"); };
-  const remove = async id => { await db.del("students", id); setStudents(s => s.filter(x => x.id !== id)); notify("Removed", false); };
-  const invite = async () => {
+  const remove  = async id => { await db.del("students", id); setStudents(s => s.filter(x => x.id !== id)); notify("Removed", false); };
+  const invite  = async () => {
     if (!ns.name || !ns.email || !ns.password) return;
     const r = await db.insert("students", { name: ns.name, email: ns.email, password: ns.password, status: "active", enrolled_courses: ns.courses, join_date: new Date().toISOString().slice(0, 10), progress: {} });
     if (r?.[0]) setStudents(s => [...s, r[0]]);
@@ -679,8 +850,7 @@ function Admin({ me, onLogout, t }) {
       const result = await db.insert("codes", { code, course_id: genCourseId, used: false });
       if (result?.[0]) { newCodes.push(result[0]); setCodes(prev => [...prev, result[0]]); }
     }
-    setGeneratedCodes(newCodes);
-    notify(`${newCodes.length} code${newCodes.length > 1 ? "s" : ""} generated`);
+    setGeneratedCodes(newCodes); notify(`${newCodes.length} code${newCodes.length > 1 ? "s" : ""} generated`);
   };
 
   const copyCode = code => { navigator.clipboard.writeText(code); setCopied(code); setTimeout(() => setCopied(null), 2000); };
@@ -688,11 +858,10 @@ function Admin({ me, onLogout, t }) {
 
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner t={t} /></div>;
 
-  const pending = students.filter(s => s.status === "pending");
-  const active  = students.filter(s => s.status === "active");
-  const allL    = courses.flatMap(c => (c.chapters || []).flatMap(ch => ch.lessons || []));
-  const pct     = s => allL.length ? Math.round(Object.values(s.progress || {}).flatMap(p => p.watched || []).length / allL.length * 100) : 0;
-  const avgPct  = active.length ? Math.round(active.reduce((a, s) => a + pct(s), 0) / active.length) : 0;
+  const pending     = students.filter(s => s.status === "pending");
+  const active      = students.filter(s => s.status === "active");
+  const allL        = courses.flatMap(c => (c.chapters || []).flatMap(ch => ch.lessons || []));
+  const pct         = s => allL.length ? Math.round(Object.values(s.progress || {}).flatMap(p => p.watched || []).length / allL.length * 100) : 0;
   const unusedCodes = codes.filter(c => !c.used).length;
 
   const navTabs = [
@@ -719,12 +888,8 @@ function Admin({ me, onLogout, t }) {
         </div>
       )}
 
-      {/* Video upload modal */}
-      {modal?.type === "upload" && (
-        <VideoUploadModal lesson={modal.lesson} courseId={modal.courseId} courses={courses} setCourses={setCourses} onClose={() => setModal(null)} t={t} />
-      )}
+      {modal?.type === "upload" && <VideoUploadModal lesson={modal.lesson} courseId={modal.courseId} courses={courses} setCourses={setCourses} onClose={() => setModal(null)} t={t} />}
 
-      {/* Invite modal */}
       {modal?.type === "invite" && (
         <ModalWrap>
           <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -738,7 +903,7 @@ function Admin({ me, onLogout, t }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Enroll in courses</label>
               {courses.map(c => (
-                <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ns.courses.includes(c.id) ? t.blueBg : t.bg2, border: `1px solid ${ns.courses.includes(c.id) ? t.blue + "30" : "transparent"}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}>
+                <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ns.courses.includes(c.id) ? t.blueBg : t.bg2, border: `1px solid ${ns.courses.includes(c.id) ? t.blue + "30" : "transparent"}`, borderRadius: 10, cursor: "pointer" }}>
                   <input type="checkbox" checked={ns.courses.includes(c.id)} onChange={e => setNs(x => ({ ...x, courses: e.target.checked ? [...x.courses, c.id] : x.courses.filter(i => i !== c.id) }))} style={{ accentColor: t.blue, width: 15, height: 15 }} />
                   <span style={{ color: t.text, fontSize: 14 }}>{c.title}</span>
                 </label>
@@ -749,7 +914,6 @@ function Admin({ me, onLogout, t }) {
         </ModalWrap>
       )}
 
-      {/* Detail modal */}
       {modal?.type === "detail" && (() => {
         const s = modal.s;
         return (
@@ -815,7 +979,7 @@ function Admin({ me, onLogout, t }) {
         </div>
       </div>
 
-      {/* Main */}
+      {/* Main content */}
       <div style={{ flex: 1, overflow: "auto", padding: "36px 40px" }}>
 
         {tab === "overview" && (
@@ -849,8 +1013,9 @@ function Admin({ me, onLogout, t }) {
             )}
             <Card t={t} style={{ padding: "20px 22px" }}>
               <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 16 }}>Student progress</div>
+              {active.length === 0 && <div style={{ fontSize: 14, color: t.sub }}>No active students yet.</div>}
               {active.slice(0, 8).map((s, i) => (
-                <div key={s.id} onClick={() => setModal({ type: "detail", s })} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: i > 0 ? `1px solid ${t.sep}` : "none", cursor: "pointer", transition: "opacity 0.15s" }}
+                <div key={s.id} onClick={() => setModal({ type: "detail", s })} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: i > 0 ? `1px solid ${t.sep}` : "none", cursor: "pointer" }}
                   onMouseEnter={e => e.currentTarget.style.opacity = "0.6"}
                   onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
                   <Av name={s.name} size={30} t={t} />
@@ -878,7 +1043,7 @@ function Admin({ me, onLogout, t }) {
               <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "12px 20px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
                 {["Name", "Email", "Courses", "Progress", "Status", ""].map(h => <span key={h} style={{ fontSize: 12, fontWeight: 500, color: t.sub }}>{h}</span>)}
               </div>
-              {students.map((s) => (
+              {students.map(s => (
                 <div key={s.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "13px 20px", borderBottom: `1px solid ${t.sep}`, alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Av name={s.name} size={28} t={t} />
@@ -924,7 +1089,7 @@ function Admin({ me, onLogout, t }) {
                           <div style={{ fontSize: 14, color: t.sub }}>{c.description}</div>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 16, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                          <Tag color={c.color || t.blue} t={t}>{lessons.length} lessons</Tag>
+                          <Tag color={c.color || t.blue} t={t}>{lessons.length} lectures</Tag>
                           <Tag color={t.green} t={t}>{enrolled} students</Tag>
                           <Tag color={withVideo === lessons.length ? t.green : t.orange} t={t}>{withVideo}/{lessons.length} videos</Tag>
                         </div>
@@ -959,7 +1124,7 @@ function Admin({ me, onLogout, t }) {
         {tab === "videos" && (
           <div style={{ animation: "fade 0.3s ease" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Videos</h1>
-            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Upload videos directly to each lesson.</div>
+            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Upload lecture videos to each lesson.</div>
             {courses.map(c => {
               const lessons = (c.chapters || []).flatMap(ch => ch.lessons || []);
               const withVideo = lessons.filter(l => l.video_url).length;
@@ -998,7 +1163,6 @@ function Admin({ me, onLogout, t }) {
           <div style={{ animation: "fade 0.3s ease" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Access Codes</h1>
             <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Generate and share codes after payment.</div>
-
             <Card t={t} style={{ padding: 24, marginBottom: 16 }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: t.text, marginBottom: 20 }}>Generate New Codes</div>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 16 }}>
@@ -1036,7 +1200,6 @@ function Admin({ me, onLogout, t }) {
                 </div>
               )}
             </Card>
-
             <Card t={t} style={{ overflow: "hidden" }}>
               <div style={{ padding: "16px 22px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 15, fontWeight: 500, color: t.text }}>All Codes</div>
@@ -1152,7 +1315,7 @@ function StudentView({ me: initMe, onLogout, t }) {
   };
 
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner t={t} /></div>;
-  if (player) return <VideoPlayer lesson={player.lesson} userEmail={me.email} onClose={() => setPlayer(null)} onComplete={() => markWatched(player.cid, player.lesson.id)} t={t} />;
+  if (player) return <VideoPlayer lesson={player.lesson} userEmail={me.email || me.name} onClose={() => setPlayer(null)} onComplete={() => markWatched(player.cid, player.lesson.id)} t={t} />;
   if (quiz) return <QuizModal quiz={quiz.q} existing={(me.progress || {})[quiz.cid]?.quizScores?.[quiz.q.id]} onSubmit={s => saveQuiz(quiz.cid, quiz.q.id, s)} onClose={() => setQuiz(null)} t={t} />;
 
   return (
@@ -1183,7 +1346,6 @@ function StudentView({ me: initMe, onLogout, t }) {
       </div>
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "36px 24px 80px" }}>
-
         {tab === "home" && (
           <div style={{ animation: "fade 0.3s ease" }}>
             <div style={{ marginBottom: 32 }}>
@@ -1191,7 +1353,7 @@ function StudentView({ me: initMe, onLogout, t }) {
               <div style={{ fontSize: 15, color: t.sub }}>Continue learning where you left off.</div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 28 }}>
-              <Stat label="Lessons completed" value={totalW} t={t} i={0} />
+              <Stat label="Lectures completed" value={totalW} t={t} i={0} />
               <Stat label="Overall progress" value={`${overallPct}%`} t={t} i={1} />
               <Stat label="Courses enrolled" value={mine.length} t={t} i={2} />
             </div>
@@ -1216,7 +1378,7 @@ function StudentView({ me: initMe, onLogout, t }) {
                         <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 12 }}>{c.title}</div>
                         <Track value={p} color={c.color || t.blue} t={t} />
                         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
-                          <span style={{ fontSize: 13, color: t.sub }}>{w.length}/{cl.length} lessons</span>
+                          <span style={{ fontSize: 13, color: t.sub }}>{w.length}/{cl.length} lectures</span>
                           <span style={{ fontSize: 13, color: c.color || t.blue }}>{p}%</span>
                         </div>
                         {next && <div style={{ marginTop: 12, fontSize: 13, color: t.sub, display: "flex", alignItems: "center", gap: 6 }}><span style={{ color: t.blue, fontSize: 10 }}>▶</span>{next.title}</div>}
@@ -1275,9 +1437,9 @@ function StudentView({ me: initMe, onLogout, t }) {
                                       </div>
                                       <div style={{ flex: 1 }}>
                                         <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{l.title}</div>
-                                        <div style={{ fontSize: 12, color: t.sub, marginTop: 2 }}>{l.duration}</div>
+                                        <div style={{ fontSize: 12, color: t.sub, marginTop: 2 }}>{l.duration || "—"}</div>
                                       </div>
-                                      {!l.video_url && <Tag color={t.sub} t={t}>Preview</Tag>}
+                                      {!l.video_url && <Tag color={t.sub} t={t}>No video</Tag>}
                                       {watched && <Tag color={c.color || t.blue} t={t}>Done</Tag>}
                                     </div>
                                   );
@@ -1327,7 +1489,7 @@ function StudentView({ me: initMe, onLogout, t }) {
                     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                          <span style={{ fontSize: 14, color: t.sub }}>Lessons</span>
+                          <span style={{ fontSize: 14, color: t.sub }}>Lectures</span>
                           <span style={{ fontSize: 13, color: c.color || t.blue }}>{sp.watched?.length || 0} / {cl.length}</span>
                         </div>
                         <Track value={p} color={c.color || t.blue} height={5} t={t} />
@@ -1356,23 +1518,91 @@ function StudentView({ me: initMe, onLogout, t }) {
 
 // ─── ROOT ────────────────────────────────────────────────────────────
 export default function App() {
-  const dark = useDark();
+  const dark  = useDark();
   const theme = mk(dark);
-  const [splash, setSplash] = useState(true);
+  const [splash,  setSplash]  = useState(true);
   const [session, setSession] = useState(null);
+  const [checking, setChecking] = useState(true);
 
-  useEffect(() => { setTimeout(() => setSplash(false), 1800); }, []);
+  // Restore session on load + handle Google OAuth callback
+  useEffect(() => {
+    const init = async () => {
+      // ── Handle Google OAuth redirect ──────────────────────────────
+      const hash = window.location.hash;
+      if (hash && hash.includes("access_token")) {
+        try {
+          const params = new URLSearchParams(hash.replace("#", "?"));
+          const accessToken = params.get("access_token");
+          if (accessToken) {
+            // Get user info from Supabase auth
+            const res = await fetch(`${SB_URL}/auth/v1/user`, {
+              headers: { ...H, Authorization: `Bearer ${accessToken}` }
+            });
+            const authUser = await res.json();
+            if (authUser?.email) {
+              // Find or create student record
+              let rows = await db.get("students", { email: authUser.email });
+              if (!rows?.length) {
+                // Auto-create account for new Google users
+                const name = authUser.user_metadata?.full_name || authUser.email.split("@")[0];
+                const inserted = await db.insert("students", {
+                  name, email: authUser.email, password: "", status: "active",
+                  enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {}
+                });
+                rows = inserted;
+              }
+              if (rows?.[0]) {
+                const s = { role: "student", user: rows[0] };
+                setSession(s);
+                saveSession(s);
+                window.history.replaceState(null, "", window.location.pathname);
+                setSplash(false);
+                setChecking(false);
+                return;
+              }
+            }
+          }
+        } catch (e) { console.error("OAuth error", e); }
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+
+      // ── Restore saved session ─────────────────────────────────────
+      const saved = loadSession();
+      if (saved) {
+        const table = saved.role === "admin" ? "admins" : "students";
+        db.get(table, { id: saved.user.id }).then(rows => {
+          if (rows?.[0]) setSession({ role: saved.role, user: rows[0] });
+          setChecking(false);
+        }).catch(() => setChecking(false));
+      } else {
+        setChecking(false);
+      }
+    };
+
+    init();
+    setTimeout(() => setSplash(false), 1400);
+  }, []);
+
+  const handleLogin = (role, user, keep) => {
+    setSession({ role, user });
+    if (keep) saveSession({ role, user });
+  };
+
+  const handleLogout = () => {
+    setSession(null);
+    clearSession();
+  };
+
+  if (splash || checking) return <><GS dark={dark} /><Splash t={theme} /></>;
 
   return (
     <>
       <GS dark={dark} />
-      {splash
-        ? <Splash t={theme} />
-        : !session
-          ? <Auth onLogin={(role, user) => setSession({ role, user })} t={theme} />
-          : session.role === "admin"
-            ? <Admin me={session.user} onLogout={() => setSession(null)} t={theme} />
-            : <StudentView me={session.user} onLogout={() => setSession(null)} t={theme} />
+      {!session
+        ? <Auth onLogin={handleLogin} t={theme} />
+        : session.role === "admin"
+          ? <Admin me={session.user} onLogout={handleLogout} t={theme} />
+          : <StudentView me={session.user} onLogout={handleLogout} t={theme} />
       }
     </>
   );
