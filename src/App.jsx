@@ -470,8 +470,22 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
   };
 
   const toggleFS = () => {
-    if (!document.fullscreenElement) wrapRef.current?.requestFullscreen();
-    else document.exitFullscreen();
+    const v = videoRef.current;
+    const wrap = wrapRef.current;
+    // iOS Safari — native video fullscreen
+    if (v && v.webkitEnterFullscreen && !document.fullscreenElement && !document.webkitFullscreenElement) {
+      v.webkitEnterFullscreen();
+      return;
+    }
+    const isFS = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!isFS) {
+      const el = wrap || v;
+      if (el?.requestFullscreen) el.requestFullscreen();
+      else if (el?.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
   };
 
   const pct = duration ? (currentTime / duration) * 100 : 0;
@@ -812,6 +826,238 @@ function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t })
 }
 
 // ─── ADMIN ───────────────────────────────────────────────────────────
+
+// ─── COURSE BUILDER ──────────────────────────────────────────────────
+function CourseBuilder({ courses, setCourses, notify, t }) {
+  const [selCourse, setSelCourse] = useState(null);
+  const [editingChap, setEditingChap] = useState(null); // {chapId, name}
+  const [editingLec,  setEditingLec]  = useState(null); // {chapId, lecId, title, duration}
+  const [newChapName, setNewChapName] = useState("");
+  const [addingChap,  setAddingChap]  = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const uid = () => Math.random().toString(36).slice(2, 10);
+
+  const course = courses.find(c => c.id === selCourse);
+
+  const saveChapters = async (updatedChapters) => {
+    setSaving(true);
+    await db.update("courses", selCourse, { chapters: updatedChapters });
+    setCourses(prev => prev.map(c => c.id === selCourse ? { ...c, chapters: updatedChapters } : c));
+    setSaving(false);
+  };
+
+  // Add chapter
+  const addChapter = async () => {
+    if (!newChapName.trim()) return;
+    const ch = { id: uid(), title: newChapName.trim(), lessons: [] };
+    const updated = [...(course.chapters || []), ch];
+    await saveChapters(updated);
+    setNewChapName(""); setAddingChap(false);
+    notify("Chapter added");
+  };
+
+  // Rename chapter
+  const renameChapter = async (chapId, newName) => {
+    const updated = (course.chapters || []).map(ch => ch.id === chapId ? { ...ch, title: newName } : ch);
+    await saveChapters(updated);
+    setEditingChap(null);
+    notify("Chapter renamed");
+  };
+
+  // Delete chapter
+  const deleteChapter = async (chapId) => {
+    const updated = (course.chapters || []).filter(ch => ch.id !== chapId);
+    await saveChapters(updated);
+    notify("Chapter deleted", false);
+  };
+
+  // Add lecture
+  const addLecture = async (chapId) => {
+    const updated = (course.chapters || []).map(ch =>
+      ch.id === chapId ? { ...ch, lessons: [...(ch.lessons || []), { id: uid(), title: "New Lecture", duration: "00:00" }] } : ch
+    );
+    await saveChapters(updated);
+    notify("Lecture added");
+  };
+
+  // Save lecture edits
+  const saveLecture = async () => {
+    if (!editingLec) return;
+    const updated = (course.chapters || []).map(ch =>
+      ch.id === editingLec.chapId
+        ? { ...ch, lessons: (ch.lessons || []).map(l => l.id === editingLec.lecId ? { ...l, title: editingLec.title, duration: editingLec.duration } : l) }
+        : ch
+    );
+    await saveChapters(updated);
+    setEditingLec(null);
+    notify("Lecture saved");
+  };
+
+  // Delete lecture
+  const deleteLecture = async (chapId, lecId) => {
+    const updated = (course.chapters || []).map(ch =>
+      ch.id === chapId ? { ...ch, lessons: (ch.lessons || []).filter(l => l.id !== lecId) } : ch
+    );
+    await saveChapters(updated);
+    notify("Lecture deleted", false);
+  };
+
+  // Move chapter up/down
+  const moveChap = async (idx, dir) => {
+    const chs = [...(course.chapters || [])];
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= chs.length) return;
+    [chs[idx], chs[newIdx]] = [chs[newIdx], chs[idx]];
+    await saveChapters(chs);
+  };
+
+  // Move lecture up/down
+  const moveLec = async (chapId, idx, dir) => {
+    const updated = (course.chapters || []).map(ch => {
+      if (ch.id !== chapId) return ch;
+      const ls = [...(ch.lessons || [])];
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= ls.length) return ch;
+      [ls[idx], ls[newIdx]] = [ls[newIdx], ls[idx]];
+      return { ...ch, lessons: ls };
+    });
+    await saveChapters(updated);
+  };
+
+  return (
+    <div style={{ animation: "fade 0.3s ease" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+        <div>
+          <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Course Builder</h1>
+          <div style={{ fontSize: 15, color: t.sub }}>Build chapters and lectures for each course.</div>
+        </div>
+        {saving && <div style={{ display: "flex", alignItems: "center", gap: 8, color: t.sub, fontSize: 13 }}><Spinner size={14} color={t.sub} />Saving…</div>}
+      </div>
+
+      {/* Course selector */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+        {courses.map(c => (
+          <button key={c.id} onClick={() => setSelCourse(c.id)}
+            style={{ background: selCourse === c.id ? t.blue : t.bg2, border: `1.5px solid ${selCourse === c.id ? t.blue : "transparent"}`, borderRadius: 10, padding: "10px 18px", color: selCourse === c.id ? "#fff" : t.text, fontSize: 14, fontWeight: selCourse === c.id ? 500 : 400, cursor: "pointer", transition: "all 0.15s" }}>
+            {c.title}
+          </button>
+        ))}
+      </div>
+
+      {!selCourse && (
+        <Card t={t} style={{ padding: "48px", textAlign: "center" }}>
+          <div style={{ fontSize: 15, color: t.sub }}>Select a course above to start building.</div>
+        </Card>
+      )}
+
+      {course && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Chapters */}
+          {(course.chapters || []).map((ch, ci) => (
+            <Card key={ch.id} t={t} style={{ overflow: "hidden" }}>
+              <div style={{ height: 3, background: course.color || t.blue }} />
+              <div style={{ padding: "16px 20px" }}>
+                {/* Chapter header */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                  {editingChap?.chapId === ch.id ? (
+                    <>
+                      <input value={editingChap.name} onChange={e => setEditingChap(x => ({ ...x, name: e.target.value }))}
+                        autoFocus
+                        style={{ flex: 1, background: t.bg2, border: `1.5px solid ${t.blue}`, borderRadius: 8, padding: "8px 12px", color: t.text, fontSize: 15, fontWeight: 500 }} />
+                      <button onClick={() => renameChapter(ch.id, editingChap.name)}
+                        style={{ background: t.blue, border: "none", borderRadius: 8, padding: "8px 14px", color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Save</button>
+                      <button onClick={() => setEditingChap(null)}
+                        style={{ background: t.bg2, border: "none", borderRadius: 8, padding: "8px 14px", color: t.sub, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 16, fontWeight: 600, color: t.text, flex: 1 }}>{ch.title}</div>
+                      <Tag color={course.color || t.blue} t={t}>{(ch.lessons || []).length} lectures</Tag>
+                      <button onClick={() => moveChap(ci, -1)} style={{ background: t.bg2, border: "none", borderRadius: 6, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer", fontSize: 14 }}>↑</button>
+                      <button onClick={() => moveChap(ci, 1)} style={{ background: t.bg2, border: "none", borderRadius: 6, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer", fontSize: 14 }}>↓</button>
+                      <button onClick={() => setEditingChap({ chapId: ch.id, name: ch.title })}
+                        style={{ background: t.bg2, border: "none", borderRadius: 8, padding: "6px 12px", color: t.sub, fontSize: 13, cursor: "pointer" }}>Rename</button>
+                      <button onClick={() => deleteChapter(ch.id)}
+                        style={{ background: t.redBg, border: `1px solid ${t.red}25`, borderRadius: 8, padding: "6px 12px", color: t.red, fontSize: 13, cursor: "pointer" }}>Delete</button>
+                    </>
+                  )}
+                </div>
+
+                {/* Lectures */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {(ch.lessons || []).map((l, li) => (
+                    <div key={l.id}>
+                      {editingLec?.lecId === l.id ? (
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "10px 12px", background: t.blueBg, border: `1.5px solid ${t.blue}30`, borderRadius: 10 }}>
+                          <input value={editingLec.title} onChange={e => setEditingLec(x => ({ ...x, title: e.target.value }))}
+                            placeholder="Lecture title" autoFocus
+                            style={{ flex: 1, background: t.bg2, border: `1.5px solid ${t.blue}`, borderRadius: 8, padding: "7px 12px", color: t.text, fontSize: 14 }} />
+                          <input value={editingLec.duration} onChange={e => setEditingLec(x => ({ ...x, duration: e.target.value }))}
+                            placeholder="e.g. 12:30"
+                            style={{ width: 80, background: t.bg2, border: `1.5px solid ${t.sep}`, borderRadius: 8, padding: "7px 10px", color: t.text, fontSize: 14, fontFamily: "ui-monospace,monospace" }} />
+                          <button onClick={saveLecture}
+                            style={{ background: t.blue, border: "none", borderRadius: 8, padding: "7px 14px", color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>Save</button>
+                          <button onClick={() => setEditingLec(null)}
+                            style={{ background: t.bg2, border: "none", borderRadius: 8, padding: "7px 10px", color: t.sub, fontSize: 13, cursor: "pointer" }}>✕</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: t.bg2, borderRadius: 10 }}>
+                          <div style={{ width: 26, height: 26, borderRadius: 7, background: l.video_url ? t.greenBg : t.bg3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: l.video_url ? t.green : t.sub, flexShrink: 0 }}>
+                            {l.video_url ? "✓" : "▶"}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{l.title}</div>
+                          </div>
+                          <span style={{ fontSize: 12, color: t.sub, fontFamily: "ui-monospace,monospace", minWidth: 40 }}>{l.duration || "—"}</span>
+                          <button onClick={() => moveLec(ch.id, li, -1)} style={{ background: t.bg3, border: "none", borderRadius: 5, width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer", fontSize: 12 }}>↑</button>
+                          <button onClick={() => moveLec(ch.id, li, 1)} style={{ background: t.bg3, border: "none", borderRadius: 5, width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer", fontSize: 12 }}>↓</button>
+                          <button onClick={() => setEditingLec({ chapId: ch.id, lecId: l.id, title: l.title, duration: l.duration || "" })}
+                            style={{ background: t.bg3, border: "none", borderRadius: 7, padding: "5px 10px", color: t.sub, fontSize: 12, cursor: "pointer" }}>Edit</button>
+                          <button onClick={() => deleteLecture(ch.id, l.id)}
+                            style={{ background: t.redBg, border: `1px solid ${t.red}20`, borderRadius: 7, padding: "5px 10px", color: t.red, fontSize: 12, cursor: "pointer" }}>✕</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Add lecture button */}
+                  <button onClick={() => addLecture(ch.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "transparent", border: `1.5px dashed ${t.sep}`, borderRadius: 10, color: t.sub, fontSize: 14, cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = t.blue; e.currentTarget.style.color = t.blue; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = t.sep; e.currentTarget.style.color = t.sub; }}>
+                    + Add Lecture
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))}
+
+          {/* Add chapter */}
+          {addingChap ? (
+            <Card t={t} style={{ padding: "16px 20px" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input value={newChapName} onChange={e => setNewChapName(e.target.value)} placeholder="Chapter title…" autoFocus
+                  onKeyDown={e => { if (e.key === "Enter") addChapter(); if (e.key === "Escape") setAddingChap(false); }}
+                  style={{ flex: 1, background: t.bg2, border: `1.5px solid ${t.blue}`, borderRadius: 8, padding: "10px 14px", color: t.text, fontSize: 15 }} />
+                <button onClick={addChapter} style={{ background: t.blue, border: "none", borderRadius: 8, padding: "10px 18px", color: "#fff", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>Add</button>
+                <button onClick={() => { setAddingChap(false); setNewChapName(""); }} style={{ background: t.bg2, border: "none", borderRadius: 8, padding: "10px 14px", color: t.sub, fontSize: 14, cursor: "pointer" }}>Cancel</button>
+              </div>
+            </Card>
+          ) : (
+            <button onClick={() => setAddingChap(true)}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "16px", background: "transparent", border: `2px dashed ${t.sep}`, borderRadius: 14, color: t.sub, fontSize: 15, cursor: "pointer", transition: "all 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = t.blue; e.currentTarget.style.color = t.blue; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = t.sep; e.currentTarget.style.color = t.sub; }}>
+              + Add Chapter
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Admin({ me, onLogout, t }) {
   const [tab, setTab] = useState("overview");
   const [students, setStudents] = useState([]);
@@ -868,6 +1114,7 @@ function Admin({ me, onLogout, t }) {
     { id: "overview",  label: "Overview" },
     { id: "students",  label: "Students", badge: pending.length },
     { id: "courses",   label: "Courses" },
+    { id: "builder",   label: "Course Builder" },
     { id: "videos",    label: "Videos" },
     { id: "codes",     label: "Access Codes" },
     { id: "analytics", label: "Analytics" },
@@ -1225,6 +1472,11 @@ function Admin({ me, onLogout, t }) {
               })}
             </Card>
           </div>
+        )}
+
+
+        {tab === "builder" && (
+          <CourseBuilder courses={courses} setCourses={setCourses} notify={notify} t={t} />
         )}
 
         {tab === "analytics" && (
@@ -1607,3 +1859,4 @@ export default function App() {
     </>
   );
 }
+
