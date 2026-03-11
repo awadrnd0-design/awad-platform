@@ -12,22 +12,81 @@ const db = {
     return fetch(u, { headers: H }).then(r => r.json());
   },
   insert: (t, d) => fetch(`${SB_URL}/rest/v1/${t}`, {
-    method: "POST",
-    headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify(d)
+    method: "POST", headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(d)
   }).then(r => r.json()),
   update: (t, id, d) => fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`, {
-    method: "PATCH",
-    headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify(d)
+    method: "PATCH", headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(d)
   }).then(r => r.json()),
   updateWhere: (t, field, val, d) => fetch(`${SB_URL}/rest/v1/${t}?${field}=eq.${encodeURIComponent(val)}`, {
-    method: "PATCH",
-    headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify(d)
+    method: "PATCH", headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(d)
   }).then(r => r.json()),
   del: (t, id) => fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`, { method: "DELETE", headers: H }),
 };
+
+// ─── CLOUDFLARE R2 ───────────────────────────────────────────────────
+const R2_ENDPOINT = "3f8fd387dc687cccf32ce100b90da373.r2.cloudflarestorage.com";
+const R2_BUCKET   = "awad-videos";
+const R2_PUBLIC   = "https://pub-4ed4d283e4954a3ea2b97c65c554eb0a.r2.dev";
+const R2_ACCESS   = "dd6bed24328e883d7703047773fc50c1";
+const R2_SECRET   = "bcc4918f083f723f9aea508b8c51de4c99e55b00374c68539ecb197ca91c093d";
+
+async function sha256hex(data) {
+  const buf = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  const hash = await crypto.subtle.digest("SHA-256", buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmac(key, msg) {
+  const k = await crypto.subtle.importKey("raw", typeof key === "string" ? new TextEncoder().encode(key) : key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, typeof msg === "string" ? new TextEncoder().encode(msg) : msg));
+}
+
+async function signingKey(secret, date, region, service) {
+  let k = await hmac("AWS4" + secret, date);
+  k = await hmac(k, region);
+  k = await hmac(k, service);
+  return hmac(k, "aws4_request");
+}
+
+async function uploadToR2(file, onProgress) {
+  const ext = file.name.split(".").pop();
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const fileBuffer = await file.arrayBuffer();
+  const payloadHash = await sha256hex(new Uint8Array(fileBuffer));
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, "").slice(0, 15) + "Z";
+  const dateStamp = amzDate.slice(0, 8);
+  const region = "auto";
+
+  const canonicalUri = `/${R2_BUCKET}/${fileName}`;
+  const canonicalHeaders = `content-type:${file.type}\nhost:${R2_ENDPOINT}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
+  const signedHeaders = "content-type;host;x-amz-content-sha256;x-amz-date";
+  const canonicalRequest = `PUT\n${canonicalUri}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+
+  const credScope = `${dateStamp}/${region}/s3/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credScope}\n${await sha256hex(canonicalRequest)}`;
+
+  const sk = await signingKey(R2_SECRET, dateStamp, region, "s3");
+  const sigBytes = await hmac(sk, stringToSign);
+  const signature = Array.from(sigBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+
+  const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  // XHR for progress tracking
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", `https://${R2_ENDPOINT}/${R2_BUCKET}/${fileName}`);
+    xhr.setRequestHeader("Authorization", authHeader);
+    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.setRequestHeader("x-amz-content-sha256", payloadHash);
+    xhr.setRequestHeader("x-amz-date", amzDate);
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => xhr.status < 300 ? resolve(`${R2_PUBLIC}/${fileName}`) : reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.send(fileBuffer);
+  });
+}
 
 // ─── CODE GENERATOR ──────────────────────────────────────────────────
 const generateCode = () => {
@@ -49,75 +108,56 @@ const useDark = () => {
 };
 
 const mk = dark => ({
-  bg:       dark ? "#000000" : "#ffffff",
-  bg2:      dark ? "#1c1c1e" : "#f5f5f7",
-  bg3:      dark ? "#2c2c2e" : "#e8e8ed",
-  card:     dark ? "#1c1c1e" : "#ffffff",
-  cardBdr:  dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
-  sep:      dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
-  text:     dark ? "#f5f5f7" : "#1d1d1f",
-  sub:      dark ? "#98989d" : "#6e6e73",
-  muted:    dark ? "#48484a" : "#d1d1d6",
-  blue:     dark ? "#0a84ff" : "#0071e3",
-  blueBg:   dark ? "rgba(10,132,255,0.1)" : "rgba(0,113,227,0.07)",
-  green:    dark ? "#30d158" : "#1d8348",
-  greenBg:  dark ? "rgba(48,209,88,0.1)" : "rgba(29,131,72,0.07)",
-  red:      dark ? "#ff453a" : "#d70015",
-  redBg:    dark ? "rgba(255,69,58,0.1)" : "rgba(215,0,21,0.06)",
-  orange:   dark ? "#ff9f0a" : "#bf5af2",
-  shadow:   dark ? "0 1px 0 rgba(255,255,255,0.06), 0 4px 16px rgba(0,0,0,0.5)" : "0 1px 0 rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.08)",
-  shadowLg: dark ? "0 8px 40px rgba(0,0,0,0.7)" : "0 8px 40px rgba(0,0,0,0.12)",
+  bg:      dark ? "#000000" : "#ffffff",
+  bg2:     dark ? "#1c1c1e" : "#f5f5f7",
+  bg3:     dark ? "#2c2c2e" : "#e8e8ed",
+  card:    dark ? "#1c1c1e" : "#ffffff",
+  cardBdr: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+  sep:     dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
+  text:    dark ? "#f5f5f7" : "#1d1d1f",
+  sub:     dark ? "#98989d" : "#6e6e73",
+  muted:   dark ? "#48484a" : "#d1d1d6",
+  blue:    dark ? "#0a84ff" : "#0071e3",
+  blueBg:  dark ? "rgba(10,132,255,0.1)" : "rgba(0,113,227,0.07)",
+  green:   dark ? "#30d158" : "#1d8348",
+  greenBg: dark ? "rgba(48,209,88,0.1)" : "rgba(29,131,72,0.07)",
+  red:     dark ? "#ff453a" : "#d70015",
+  redBg:   dark ? "rgba(255,69,58,0.1)" : "rgba(215,0,21,0.06)",
+  orange:  dark ? "#ff9f0a" : "#f59e0b",
+  shadow:  dark ? "0 1px 0 rgba(255,255,255,0.06),0 4px 16px rgba(0,0,0,0.5)" : "0 1px 0 rgba(0,0,0,0.04),0 4px 16px rgba(0,0,0,0.08)",
+  shadowLg:dark ? "0 8px 40px rgba(0,0,0,0.7)" : "0 8px 40px rgba(0,0,0,0.12)",
 });
 
 // ─── GLOBAL STYLES ───────────────────────────────────────────────────
 const GS = ({ dark }) => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { color-scheme: ${dark ? "dark" : "light"}; }
-    body {
-      background: ${dark ? "#000" : "#fff"};
-      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
-      -webkit-font-smoothing: antialiased;
-      font-size: 17px;
-      line-height: 1.47059;
-      letter-spacing: -0.022em;
-    }
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-thumb { background: ${dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.12)"}; border-radius: 4px; }
-    input, button, textarea { font-family: inherit; letter-spacing: inherit; }
-    input:focus, textarea:focus { outline: none; }
-    button { cursor: pointer; }
-    ::selection { background: rgba(0,113,227,0.2); }
-    a { color: inherit; text-decoration: none; }
-
-    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{color-scheme:${dark?"dark":"light"}}
+    body{background:${dark?"#000":"#fff"};font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:17px;line-height:1.47059;letter-spacing:-0.022em}
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-thumb{background:${dark?"rgba(255,255,255,0.15)":"rgba(0,0,0,0.12)"};border-radius:4px}
+    input,button,textarea,select{font-family:inherit;letter-spacing:inherit}
+    input:focus,textarea:focus,select:focus{outline:none}
+    button{cursor:pointer}
+    ::selection{background:rgba(0,113,227,0.2)}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes fade{from{opacity:0}to{opacity:1}}
+    @keyframes scaleIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
   `}</style>
 );
 
-// ─── COMPONENTS ──────────────────────────────────────────────────────
-
+// ─── PRIMITIVES ──────────────────────────────────────────────────────
 const Spinner = ({ size = 20, color }) => (
   <div style={{ width: size, height: size, border: `2px solid rgba(128,128,128,0.2)`, borderTopColor: color || "#0071e3", borderRadius: "50%", animation: "spin 0.7s linear infinite", flexShrink: 0 }} />
 );
 
 const Btn = ({ children, onClick, disabled, full, sm, variant = "primary", t }) => {
   const [hov, setHov] = useState(false);
-  const styles = {
-    primary: { bg: hov ? (t.blue === "#0071e3" ? "#0077ed" : "#0a84ff") : t.blue, color: "#fff", border: "none" },
-    secondary: { bg: hov ? t.bg3 : t.bg2, color: t.text, border: `1px solid ${t.sep}` },
-    danger: { bg: hov ? t.redBg : "transparent", color: t.red, border: `1px solid ${t.red}30` },
-    ghost: { bg: hov ? t.bg2 : "transparent", color: t.sub, border: "none" },
-  }[variant];
+  const s = { primary: { bg: hov ? "#0077ed" : t.blue, color: "#fff", border: "none" }, secondary: { bg: hov ? t.bg3 : t.bg2, color: t.text, border: `1px solid ${t.sep}` }, danger: { bg: hov ? t.redBg : "transparent", color: t.red, border: `1px solid ${t.red}30` }, ghost: { bg: hov ? t.bg2 : "transparent", color: t.sub, border: "none" } }[variant];
   return (
-    <button
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      onClick={onClick} disabled={disabled}
-      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: styles.bg, color: styles.color, border: styles.border || "none", borderRadius: sm ? 8 : 12, padding: sm ? "6px 14px" : "12px 22px", fontSize: sm ? 13 : 15, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, transition: "all 0.15s", width: full ? "100%" : "auto", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>
+    <button onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick} disabled={disabled}
+      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: s.bg, color: s.color, border: s.border || "none", borderRadius: sm ? 8 : 12, padding: sm ? "6px 14px" : "12px 22px", fontSize: sm ? 13 : 15, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, transition: "all 0.15s", width: full ? "100%" : "auto", whiteSpace: "nowrap" }}>
       {children}
     </button>
   );
@@ -127,12 +167,10 @@ const Input = ({ label, value, onChange, type = "text", placeholder, t, hint, au
   const [focused, setFocused] = useState(false);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {label && <label style={{ fontSize: 13, fontWeight: 500, color: t.sub, letterSpacing: "0.01em" }}>{label}</label>}
-      <input
-        type={type} value={value} onChange={onChange} placeholder={placeholder} autoFocus={autoFocus}
+      {label && <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>{label}</label>}
+      <input type={type} value={value} onChange={onChange} placeholder={placeholder} autoFocus={autoFocus}
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-        style={{ background: t.bg2, border: `1.5px solid ${focused ? t.blue : "transparent"}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.15s", boxShadow: focused ? `0 0 0 4px ${t.blueBg}` : "none" }}
-      />
+        style={{ background: t.bg2, border: `1.5px solid ${focused ? t.blue : "transparent"}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.15s", boxShadow: focused ? `0 0 0 4px ${t.blueBg}` : "none" }} />
       {hint && <span style={{ fontSize: 12, color: t.sub }}>{hint}</span>}
     </div>
   );
@@ -145,7 +183,7 @@ const Track = ({ value = 0, color, h = 4, t }) => (
 );
 
 const Tag = ({ children, color, t }) => (
-  <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", borderRadius: 20, background: (color || t.blue) + "14", color: color || t.blue, fontSize: 12, fontWeight: 500, whiteSpace: "nowrap", letterSpacing: "0.01em" }}>
+  <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", borderRadius: 20, background: (color || t.blue) + "14", color: color || t.blue, fontSize: 12, fontWeight: 500, whiteSpace: "nowrap" }}>
     {children}
   </span>
 );
@@ -163,11 +201,8 @@ const Av = ({ name = "?", size = 32, t }) => {
 const Card = ({ children, t, style: sx, onClick, hover }) => {
   const [hov, setHov] = useState(false);
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => hover && setHov(true)}
-      onMouseLeave={() => hover && setHov(false)}
-      style={{ background: t.card, border: `1px solid ${t.cardBdr}`, borderRadius: 18, boxShadow: hov ? t.shadowLg : t.shadow, transition: "box-shadow 0.2s, transform 0.2s", transform: hov ? "translateY(-2px)" : "none", cursor: onClick ? "pointer" : "default", ...sx }}>
+    <div onClick={onClick} onMouseEnter={() => hover && setHov(true)} onMouseLeave={() => hover && setHov(false)}
+      style={{ background: t.card, border: `1px solid ${t.cardBdr}`, borderRadius: 18, boxShadow: hov ? t.shadowLg : t.shadow, transition: "box-shadow 0.2s,transform 0.2s", transform: hov ? "translateY(-2px)" : "none", cursor: onClick ? "pointer" : "default", ...sx }}>
       {children}
     </div>
   );
@@ -176,29 +211,18 @@ const Card = ({ children, t, style: sx, onClick, hover }) => {
 const Stat = ({ label, value, t, i = 0 }) => (
   <Card t={t} style={{ padding: "20px 22px", animation: `fadeUp 0.4s ease ${i * 0.06}s both` }}>
     <div style={{ fontSize: 32, fontWeight: 300, color: t.text, letterSpacing: "-0.04em", lineHeight: 1, marginBottom: 6 }}>{value}</div>
-    <div style={{ fontSize: 14, color: t.sub, fontWeight: 400 }}>{label}</div>
+    <div style={{ fontSize: 14, color: t.sub }}>{label}</div>
   </Card>
 );
 
 const Sep = ({ t }) => <div style={{ height: 1, background: t.sep }} />;
 
-// Code badge — monospace, clean
-const CodeBadge = ({ code, t }) => (
-  <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 8, padding: "8px 14px" }}>
-    <span style={{ fontFamily: "ui-monospace, 'SF Mono', Monaco, monospace", fontSize: 15, fontWeight: 500, color: t.text, letterSpacing: "0.12em" }}>{code}</span>
-  </div>
-);
-
 // ─── SPLASH ──────────────────────────────────────────────────────────
 function Splash({ t }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999, gap: 24 }}>
-      <div style={{ animation: "fade 0.5s ease" }}>
-        <div style={{ fontSize: 17, fontWeight: 600, color: t.text, letterSpacing: "0.3em", textTransform: "uppercase", textAlign: "center", marginBottom: 8 }}>
-          AWAD
-        </div>
-        <Spinner color={t.blue} />
-      </div>
+    <div style={{ position: "fixed", inset: 0, background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, zIndex: 9999 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
+      <Spinner color={t.blue} />
     </div>
   );
 }
@@ -245,55 +269,44 @@ function Auth({ onLogin, t }) {
   const oauth = () => { window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${window.location.origin}`; };
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ width: "100%", maxWidth: 380, animation: "fadeUp 0.5s ease" }}>
-        {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
         </div>
-
         <Card t={t} style={{ overflow: "hidden" }}>
-          {/* Tabs */}
           <div style={{ display: "flex", borderBottom: `1px solid ${t.sep}` }}>
             {[["login", "Sign In"], ["signup", "Create Account"]].map(([m, l]) => (
               <button key={m} onClick={() => { setMode(m); setErr(""); setDone(false); }}
-                style={{ flex: 1, padding: "14px", background: "transparent", border: "none", borderBottom: `2px solid ${mode === m ? t.blue : "transparent"}`, color: mode === m ? t.blue : t.sub, fontSize: 14, fontWeight: mode === m ? 600 : 400, cursor: "pointer", transition: "all 0.15s", marginBottom: -1 }}>
+                style={{ flex: 1, padding: 14, background: "transparent", border: "none", borderBottom: `2px solid ${mode === m ? t.blue : "transparent"}`, color: mode === m ? t.blue : t.sub, fontSize: 14, fontWeight: mode === m ? 600 : 400, cursor: "pointer", transition: "all 0.15s", marginBottom: -1 }}>
                 {l}
               </button>
             ))}
           </div>
-
           <div style={{ padding: "28px 24px" }}>
             {done ? (
               <div style={{ textAlign: "center", animation: "scaleIn 0.3s ease" }}>
                 <div style={{ width: 52, height: 52, borderRadius: "50%", background: t.greenBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: t.green }}>✓</div>
                 <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>Account requested</div>
-                <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5, marginBottom: 22 }}>Your account is under review and will be activated shortly.</div>
+                <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5, marginBottom: 22 }}>Your account will be activated shortly.</div>
                 <Btn variant="secondary" onClick={() => { setMode("login"); setDone(false); }} t={t}>Back to Sign In</Btn>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {/* Google */}
                 <button onClick={oauth}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 10, padding: "11px", color: t.text, fontSize: 15, fontWeight: 400, cursor: "pointer", transition: "background 0.15s" }}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 10, padding: 11, color: t.text, fontSize: 15, fontWeight: 400, cursor: "pointer", transition: "background 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.background = t.bg3}
                   onMouseLeave={e => e.currentTarget.style.background = t.bg2}>
                   <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
                   Continue with Google
                 </button>
-
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Sep t={t} />
-                  <span style={{ fontSize: 13, color: t.muted, flexShrink: 0 }}>or</span>
-                  <Sep t={t} />
+                  <Sep t={t} /><span style={{ fontSize: 13, color: t.muted, flexShrink: 0 }}>or</span><Sep t={t} />
                 </div>
-
                 {mode === "signup" && <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" t={t} />}
                 <Input label="Email" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@example.com" t={t} autoFocus={mode === "login"} />
                 <Input label="Password" value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••••" t={t} />
-
                 {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
-
                 <Btn onClick={mode === "login" ? login : signup} disabled={loading} full t={t}>
                   {loading ? <Spinner size={16} color="#fff" /> : mode === "login" ? "Sign In" : "Create Account"}
                 </Btn>
@@ -308,60 +321,90 @@ function Auth({ onLogin, t }) {
 
 // ─── VIDEO PLAYER ────────────────────────────────────────────────────
 function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
+  const videoRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [prog, setProg] = useState(0);
-  const [ready, setReady] = useState(false);
   const [done, setDone] = useState(false);
+  const hasVideo = !!lesson.video_url;
+
+  // Simulated player for lessons without real video
+  const [simProg, setSimProg] = useState(0);
   const iv = useRef(null);
-
-  useEffect(() => { const timer = setTimeout(() => setReady(true), 1600); return () => clearTimeout(timer); }, []);
-
   useEffect(() => {
-    if (playing && !done) {
-      iv.current = setInterval(() => setProg(p => {
-        if (p >= 100) { clearInterval(iv.current); setPlaying(false); setDone(true); onComplete?.(); return 100; }
-        return p + 0.06;
-      }), 100);
-    } else clearInterval(iv.current);
-    return () => clearInterval(iv.current);
-  }, [playing, done]);
+    if (!hasVideo) {
+      if (playing && !done) {
+        iv.current = setInterval(() => setSimProg(p => {
+          if (p >= 100) { clearInterval(iv.current); setPlaying(false); setDone(true); onComplete?.(); return 100; }
+          return p + 0.07;
+        }), 100);
+      } else clearInterval(iv.current);
+      return () => clearInterval(iv.current);
+    }
+  }, [playing, done, hasVideo]);
 
+  const handleVideoEnd = () => { setDone(true); onComplete?.(); };
+  const handleTimeUpdate = () => {
+    if (videoRef.current) {
+      const p = (videoRef.current.currentTime / videoRef.current.duration) * 100;
+      setProg(isNaN(p) ? 0 : p);
+      if (p >= 99) { setDone(true); onComplete?.(); }
+    }
+  };
+
+  const togglePlay = () => {
+    if (hasVideo && videoRef.current) {
+      playing ? videoRef.current.pause() : videoRef.current.play();
+      setPlaying(p => !p);
+    } else {
+      setPlaying(p => !p);
+    }
+  };
+
+  const displayProg = hasVideo ? prog : simProg;
   const total = (() => { const [m, s] = (lesson.duration || "10:00").split(":").map(Number); return m * 60 + s; })();
-  const cur = Math.floor((prog / 100) * total);
+  const cur = Math.floor((displayProg / 100) * total);
   const fmt = n => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#000", display: "flex", flexDirection: "column" }}>
-      {!ready && (
-        <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Spinner size={28} color="rgba(255,255,255,0.5)" />
-        </div>
-      )}
+      <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+        {/* Real video */}
+        {hasVideo && (
+          <video ref={videoRef} src={lesson.video_url} onTimeUpdate={handleTimeUpdate} onEnded={handleVideoEnd}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
+            onClick={togglePlay} playsInline />
+        )}
 
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", cursor: "pointer" }} onClick={() => !done && setPlaying(p => !p)}>
-        <div style={{ position: "absolute", inset: 0, background: "#050505", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {!playing && !done && ready && (
-            <div style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, backdropFilter: "blur(12px)" }}>▶</div>
-          )}
-        </div>
+        {/* Fallback canvas */}
+        {!hasVideo && (
+          <div style={{ position: "absolute", inset: 0, background: "#050505", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} onClick={togglePlay}>
+            {!playing && !done && (
+              <div style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22 }}>▶</div>
+            )}
+          </div>
+        )}
 
         {/* Watermark */}
         {[...Array(5)].map((_, i) => (
           <div key={i} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" }}>
-            <div style={{ color: "rgba(255,255,255,0.02)", fontSize: 11, fontFamily: "ui-monospace, monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 3, transform: `rotate(-15deg) translateY(${(i - 2) * 120}px)` }}>
+            <div style={{ color: "rgba(255,255,255,0.022)", fontSize: 11, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 3, transform: `rotate(-15deg) translateY(${(i - 2) * 120}px)` }}>
               {[...Array(10)].fill(userEmail).join("  ·  ")}
             </div>
           </div>
         ))}
 
         {/* Top bar */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "16px 20px", background: "linear-gradient(to bottom, rgba(0,0,0,0.75), transparent)", display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={e => { e.stopPropagation(); onClose(); }}
-            style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
-            ← Back
-          </button>
-          <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 15, fontWeight: 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, padding: "16px 20px", background: "linear-gradient(to bottom,rgba(0,0,0,0.75),transparent)", display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>← Back</button>
+          <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 15, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
         </div>
+
+        {/* Play overlay for real video */}
+        {hasVideo && !playing && !done && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} onClick={togglePlay}>
+            <div style={{ width: 68, height: 68, borderRadius: "50%", background: "rgba(0,0,0,0.5)", border: "1.5px solid rgba(255,255,255,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, backdropFilter: "blur(4px)" }}>▶</div>
+          </div>
+        )}
 
         {done && (
           <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 18 }}>
@@ -375,17 +418,22 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
       {/* Controls */}
       <div style={{ background: "#111", borderTop: "1px solid rgba(255,255,255,0.06)", padding: "14px 20px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36 }}>{fmt(cur)}</span>
+          <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36 }}>{fmt(cur)}</span>
           <div style={{ flex: 1, height: 3, background: "rgba(255,255,255,0.1)", borderRadius: 3, cursor: "pointer", position: "relative" }}
-            onClick={e => { const r = e.currentTarget.getBoundingClientRect(); setProg(((e.clientX - r.left) / r.width) * 100); }}>
-            <div style={{ width: `${prog}%`, height: "100%", background: "#fff", borderRadius: 3 }} />
+            onClick={e => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const p = ((e.clientX - r.left) / r.width) * 100;
+              if (hasVideo && videoRef.current) { videoRef.current.currentTime = (p / 100) * videoRef.current.duration; setProg(p); }
+              else setSimProg(p);
+            }}>
+            <div style={{ width: `${displayProg}%`, height: "100%", background: "#fff", borderRadius: 3 }} />
           </div>
-          <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36, textAlign: "right" }}>{lesson.duration}</span>
+          <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 11, color: "rgba(255,255,255,0.3)", minWidth: 36, textAlign: "right" }}>{lesson.duration}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => setProg(p => Math.max(0, p - 4))} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>−10s</button>
-          <button onClick={() => setPlaying(p => !p)} style={{ background: "rgba(255,255,255,0.9)", border: "none", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#000", cursor: "pointer" }}>{playing ? "⏸" : "▶"}</button>
-          <button onClick={() => setProg(p => Math.min(100, p + 4))} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>+10s</button>
+          <button onClick={() => { if (hasVideo && videoRef.current) videoRef.current.currentTime -= 10; else setSimProg(p => Math.max(0, p - 4)); }} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>−10s</button>
+          <button onClick={togglePlay} style={{ background: "rgba(255,255,255,0.9)", border: "none", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "#000", cursor: "pointer" }}>{playing ? "⏸" : "▶"}</button>
+          <button onClick={() => { if (hasVideo && videoRef.current) videoRef.current.currentTime += 10; else setSimProg(p => Math.min(100, p + 4)); }} style={{ background: "rgba(255,255,255,0.06)", border: "none", borderRadius: 8, color: "rgba(255,255,255,0.5)", padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>+10s</button>
         </div>
       </div>
     </div>
@@ -399,8 +447,7 @@ function QuizModal({ quiz, existing, onSubmit, onClose, t }) {
   const [score, setScore] = useState(existing ?? null);
 
   const submit = () => {
-    let ok = 0;
-    quiz.questions.forEach(q => { if (ans[q.id] === q.answer) ok++; });
+    let ok = 0; quiz.questions.forEach(q => { if (ans[q.id] === q.answer) ok++; });
     const s = Math.round((ok / quiz.questions.length) * 100);
     setScore(s); setSubmitted(true); onSubmit(s);
   };
@@ -412,9 +459,9 @@ function QuizModal({ quiz, existing, onSubmit, onClose, t }) {
           <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>{quiz.title}</div>
           <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer" }}>✕</button>
         </div>
-        <div style={{ padding: "24px" }}>
+        <div style={{ padding: 24 }}>
           {submitted && (
-            <div style={{ textAlign: "center", padding: "24px", background: score >= 70 ? t.greenBg : t.redBg, borderRadius: 14, marginBottom: 28 }}>
+            <div style={{ textAlign: "center", padding: 24, background: score >= 70 ? t.greenBg : t.redBg, borderRadius: 14, marginBottom: 28 }}>
               <div style={{ fontSize: 48, fontWeight: 200, color: score >= 70 ? t.green : t.red, letterSpacing: "-0.04em" }}>{score}%</div>
               <div style={{ fontSize: 15, color: t.sub, marginTop: 6 }}>{score >= 70 ? "Passed" : "Keep studying and try again"}</div>
             </div>
@@ -425,9 +472,7 @@ function QuizModal({ quiz, existing, onSubmit, onClose, t }) {
                 <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 12, lineHeight: 1.5 }}>{qi + 1}. {q.text}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                   {q.options.map((opt, oi) => {
-                    const sel = ans[q.id] === oi;
-                    const correct = submitted && oi === q.answer;
-                    const wrong = submitted && sel && oi !== q.answer;
+                    const sel = ans[q.id] === oi, correct = submitted && oi === q.answer, wrong = submitted && sel && oi !== q.answer;
                     return (
                       <button key={oi} onClick={() => !submitted && setAns(a => ({ ...a, [q.id]: oi }))}
                         style={{ background: correct ? t.greenBg : wrong ? t.redBg : sel ? t.blueBg : t.bg2, border: `1.5px solid ${correct ? t.green + "40" : wrong ? t.red + "40" : sel ? t.blue + "50" : "transparent"}`, borderRadius: 10, padding: "11px 16px", color: t.text, textAlign: "left", fontSize: 15, cursor: submitted ? "default" : "pointer", transition: "all 0.15s", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -441,18 +486,14 @@ function QuizModal({ quiz, existing, onSubmit, onClose, t }) {
               </div>
             ))}
           </div>
-          {!submitted && (
-            <div style={{ marginTop: 24 }}>
-              <Btn onClick={submit} disabled={Object.keys(ans).length < quiz.questions.length} full t={t}>Submit</Btn>
-            </div>
-          )}
+          {!submitted && <div style={{ marginTop: 24 }}><Btn onClick={submit} disabled={Object.keys(ans).length < quiz.questions.length} full t={t}>Submit</Btn></div>}
         </div>
       </Card>
     </div>
   );
 }
 
-// ─── REDEEM CODE MODAL ───────────────────────────────────────────────
+// ─── REDEEM MODAL ────────────────────────────────────────────────────
 function RedeemModal({ studentId, studentEmail, courses, onSuccess, onClose, t }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -467,17 +508,13 @@ function RedeemModal({ studentId, studentEmail, courses, onSuccess, onClose, t }
       if (!results?.length) { setLoading(false); return setErr("This code doesn't exist."); }
       const entry = results[0];
       if (entry.used) { setLoading(false); return setErr("This code has already been used."); }
-      // Mark code as used
       await db.updateWhere("codes", "code", trimmed, { used: true, used_by: studentEmail, used_at: new Date().toISOString() });
-      // Enroll student
       const studs = await db.get("students", { id: studentId });
       const current = studs[0]?.enrolled_courses || [];
-      if (!current.includes(entry.course_id)) {
-        await db.update("students", studentId, { enrolled_courses: [...current, entry.course_id] });
-      }
+      if (!current.includes(entry.course_id)) await db.update("students", studentId, { enrolled_courses: [...current, entry.course_id] });
       const course = courses.find(c => c.id === entry.course_id);
       onSuccess(course?.title || "your course");
-    } catch { setErr("Something went wrong. Please try again."); }
+    } catch { setErr("Something went wrong."); }
     setLoading(false);
   };
 
@@ -488,15 +525,115 @@ function RedeemModal({ studentId, studentEmail, courses, onSuccess, onClose, t }
           <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Enter Access Code</div>
           <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer" }}>✕</button>
         </div>
-        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ fontSize: 14, color: t.sub, lineHeight: 1.5 }}>Enter the code you received to unlock your course.</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <Input label="Access Code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX" t={t} autoFocus hint="Codes are case-insensitive" />
-          </div>
+          <Input label="Access Code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="XXXX-XXXX-XXXX" t={t} autoFocus hint="Codes are not case-sensitive" />
           {err && <div style={{ background: t.redBg, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
           <Btn onClick={redeem} disabled={loading || !code.trim()} full t={t}>
             {loading ? <Spinner size={16} color="#fff" /> : "Unlock Course"}
           </Btn>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── VIDEO UPLOAD MODAL ──────────────────────────────────────────────
+function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t }) {
+  const [file, setFile] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+  const [url, setUrl] = useState(lesson.video_url || "");
+  const fileRef = useRef();
+
+  const upload = async () => {
+    if (!file) return;
+    setErr(""); setUploading(true);
+    try {
+      const videoUrl = await uploadToR2(file, setProgress);
+      // Update lesson in course
+      const course = courses.find(c => c.id === courseId);
+      const updatedChapters = (course.chapters || []).map(ch => ({
+        ...ch,
+        lessons: (ch.lessons || []).map(l => l.id === lesson.id ? { ...l, video_url: videoUrl, duration: l.duration } : l)
+      }));
+      await db.update("courses", courseId, { chapters: updatedChapters });
+      setCourses(prev => prev.map(c => c.id === courseId ? { ...c, chapters: updatedChapters } : c));
+      setUrl(videoUrl);
+      setDone(true);
+    } catch (e) { setErr(e.message || "Upload failed."); }
+    setUploading(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
+      <Card t={t} style={{ width: "100%", maxWidth: 440, animation: "scaleIn 0.22s ease" }}>
+        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Upload Video</div>
+            <div style={{ fontSize: 13, color: t.sub, marginTop: 3 }}>{lesson.title}</div>
+          </div>
+          <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+          {done ? (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ width: 52, height: 52, borderRadius: "50%", background: t.greenBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: t.green }}>✓</div>
+              <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>Video uploaded</div>
+              <div style={{ fontSize: 13, color: t.sub, marginBottom: 4, wordBreak: "break-all", fontFamily: "ui-monospace,monospace" }}>{url}</div>
+              <div style={{ marginTop: 16 }}><Btn variant="secondary" onClick={onClose} t={t}>Done</Btn></div>
+            </div>
+          ) : (
+            <>
+              {/* Current video */}
+              {lesson.video_url && !file && (
+                <div style={{ background: t.greenBg, borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: t.green }}>✓</span>
+                  <span style={{ fontSize: 13, color: t.green }}>Video already uploaded — upload again to replace</span>
+                </div>
+              )}
+
+              {/* File drop zone */}
+              <div onClick={() => fileRef.current.click()}
+                style={{ border: `2px dashed ${file ? t.blue : t.sep}`, borderRadius: 14, padding: "32px 20px", textAlign: "center", cursor: "pointer", background: file ? t.blueBg : "transparent", transition: "all 0.15s" }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f?.type.startsWith("video/")) setFile(f); }}>
+                <input ref={fileRef} type="file" accept="video/*" style={{ display: "none" }} onChange={e => setFile(e.target.files[0])} />
+                {file ? (
+                  <div>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>🎬</div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{file.name}</div>
+                    <div style={{ fontSize: 13, color: t.sub, marginTop: 4 }}>{(file.size / 1024 / 1024).toFixed(1)} MB</div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
+                    <div style={{ fontSize: 15, fontWeight: 500, color: t.text }}>Drop video here</div>
+                    <div style={{ fontSize: 13, color: t.sub, marginTop: 4 }}>or click to browse — MP4, MOV, WebM</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Progress bar */}
+              {uploading && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: t.sub }}>Uploading…</span>
+                    <span style={{ fontSize: 13, color: t.blue }}>{progress}%</span>
+                  </div>
+                  <Track value={progress} t={t} h={5} />
+                </div>
+              )}
+
+              {err && <div style={{ background: t.redBg, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
+
+              <Btn onClick={upload} disabled={!file || uploading} full t={t}>
+                {uploading ? <><Spinner size={16} color="#fff" /> Uploading {progress}%</> : "Upload to R2"}
+              </Btn>
+            </>
+          )}
         </div>
       </Card>
     </div>
@@ -527,7 +664,6 @@ function Admin({ me, onLogout, t }) {
 
   const approve = async id => { await db.update("students", id, { status: "active" }); setStudents(s => s.map(x => x.id === id ? { ...x, status: "active" } : x)); notify("Approved"); };
   const remove = async id => { await db.del("students", id); setStudents(s => s.filter(x => x.id !== id)); notify("Removed", false); };
-
   const invite = async () => {
     if (!ns.name || !ns.email || !ns.password) return;
     const r = await db.insert("students", { name: ns.name, email: ns.email, password: ns.password, status: "active", enrolled_courses: ns.courses, join_date: new Date().toISOString().slice(0, 10), progress: {} });
@@ -547,40 +683,30 @@ function Admin({ me, onLogout, t }) {
     notify(`${newCodes.length} code${newCodes.length > 1 ? "s" : ""} generated`);
   };
 
-  const copyCode = (code) => {
-    navigator.clipboard.writeText(code);
-    setCopied(code);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  const copyAll = () => {
-    const text = generatedCodes.map(c => c.code).join("\n");
-    navigator.clipboard.writeText(text);
-    notify("All codes copied");
-  };
+  const copyCode = code => { navigator.clipboard.writeText(code); setCopied(code); setTimeout(() => setCopied(null), 2000); };
+  const copyAll  = () => { navigator.clipboard.writeText(generatedCodes.map(c => c.code).join("\n")); notify("All codes copied"); };
 
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner t={t} /></div>;
 
   const pending = students.filter(s => s.status === "pending");
-  const active = students.filter(s => s.status === "active");
-  const allL = courses.flatMap(c => (c.chapters || []).flatMap(ch => ch.lessons || []));
-  const pct = s => allL.length ? Math.round(Object.values(s.progress || {}).flatMap(p => p.watched || []).length / allL.length * 100) : 0;
-  const avgPct = active.length ? Math.round(active.reduce((a, s) => a + pct(s), 0) / active.length) : 0;
+  const active  = students.filter(s => s.status === "active");
+  const allL    = courses.flatMap(c => (c.chapters || []).flatMap(ch => ch.lessons || []));
+  const pct     = s => allL.length ? Math.round(Object.values(s.progress || {}).flatMap(p => p.watched || []).length / allL.length * 100) : 0;
+  const avgPct  = active.length ? Math.round(active.reduce((a, s) => a + pct(s), 0) / active.length) : 0;
   const unusedCodes = codes.filter(c => !c.used).length;
 
   const navTabs = [
-    { id: "overview", label: "Overview" },
-    { id: "students", label: "Students", badge: pending.length },
-    { id: "courses", label: "Courses" },
-    { id: "codes", label: "Access Codes" },
+    { id: "overview",  label: "Overview" },
+    { id: "students",  label: "Students", badge: pending.length },
+    { id: "courses",   label: "Courses" },
+    { id: "videos",    label: "Videos" },
+    { id: "codes",     label: "Access Codes" },
     { id: "analytics", label: "Analytics" },
   ];
 
   const ModalWrap = ({ children, maxW = 440 }) => (
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
-      <Card t={t} style={{ width: "100%", maxWidth: maxW, animation: "scaleIn 0.22s ease" }}>
-        {children}
-      </Card>
+      <Card t={t} style={{ width: "100%", maxWidth: maxW, animation: "scaleIn 0.22s ease", maxHeight: "90vh", overflow: "auto" }}>{children}</Card>
     </div>
   );
 
@@ -593,14 +719,19 @@ function Admin({ me, onLogout, t }) {
         </div>
       )}
 
-      {/* Invite Modal */}
+      {/* Video upload modal */}
+      {modal?.type === "upload" && (
+        <VideoUploadModal lesson={modal.lesson} courseId={modal.courseId} courses={courses} setCourses={setCourses} onClose={() => setModal(null)} t={t} />
+      )}
+
+      {/* Invite modal */}
       {modal?.type === "invite" && (
         <ModalWrap>
           <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Invite Student</div>
             <button onClick={() => setModal(null)} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer" }}>✕</button>
           </div>
-          <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
             <Input label="Full Name" value={ns.name} onChange={e => setNs(x => ({ ...x, name: e.target.value }))} placeholder="Jane Doe" t={t} />
             <Input label="Email" type="email" value={ns.email} onChange={e => setNs(x => ({ ...x, email: e.target.value }))} placeholder="jane@example.com" t={t} />
             <Input label="Temporary Password" type="password" value={ns.password} onChange={e => setNs(x => ({ ...x, password: e.target.value }))} placeholder="Min. 6 characters" t={t} />
@@ -618,7 +749,7 @@ function Admin({ me, onLogout, t }) {
         </ModalWrap>
       )}
 
-      {/* Detail Modal */}
+      {/* Detail modal */}
       {modal?.type === "detail" && (() => {
         const s = modal.s;
         return (
@@ -691,7 +822,7 @@ function Admin({ me, onLogout, t }) {
           <div style={{ animation: "fade 0.3s ease" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Overview</h1>
             <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Your platform at a glance.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
               <Stat label="Total students" value={students.length} t={t} i={0} />
               <Stat label="Active" value={active.length} t={t} i={1} />
               <Stat label="Courses" value={courses.length} t={t} i={2} />
@@ -747,13 +878,13 @@ function Admin({ me, onLogout, t }) {
               <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "12px 20px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
                 {["Name", "Email", "Courses", "Progress", "Status", ""].map(h => <span key={h} style={{ fontSize: 12, fontWeight: 500, color: t.sub }}>{h}</span>)}
               </div>
-              {students.map((s, i) => (
+              {students.map((s) => (
                 <div key={s.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "13px 20px", borderBottom: `1px solid ${t.sep}`, alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Av name={s.name} size={28} t={t} />
                     <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{s.name}</span>
                   </div>
-                  <span style={{ fontSize: 13, color: t.sub, fontFamily: "ui-monospace, monospace" }}>{s.email}</span>
+                  <span style={{ fontSize: 13, color: t.sub, fontFamily: "ui-monospace,monospace" }}>{s.email}</span>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                     {(s.enrolled_courses || []).map(cid => { const c = courses.find(x => x.id === cid); return c ? <Tag key={cid} color={c.color || t.blue} t={t}>{c.title.split(" ")[0]}</Tag> : null; })}
                     {!s.enrolled_courses?.length && <span style={{ color: t.muted, fontSize: 13 }}>—</span>}
@@ -782,6 +913,7 @@ function Admin({ me, onLogout, t }) {
               {courses.map(c => {
                 const lessons = (c.chapters || []).flatMap(ch => ch.lessons || []);
                 const enrolled = students.filter(s => (s.enrolled_courses || []).includes(c.id)).length;
+                const withVideo = lessons.filter(l => l.video_url).length;
                 return (
                   <Card key={c.id} t={t} style={{ overflow: "hidden" }}>
                     <div style={{ height: 3, background: c.color || t.blue }} />
@@ -791,23 +923,27 @@ function Admin({ me, onLogout, t }) {
                           <div style={{ fontSize: 19, fontWeight: 500, color: t.text, marginBottom: 5 }}>{c.title}</div>
                           <div style={{ fontSize: 14, color: t.sub }}>{c.description}</div>
                         </div>
-                        <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 16 }}>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 16, flexWrap: "wrap", justifyContent: "flex-end" }}>
                           <Tag color={c.color || t.blue} t={t}>{lessons.length} lessons</Tag>
                           <Tag color={t.green} t={t}>{enrolled} students</Tag>
+                          <Tag color={withVideo === lessons.length ? t.green : t.orange} t={t}>{withVideo}/{lessons.length} videos</Tag>
                         </div>
                       </div>
                       {(c.chapters || []).map(ch => (
                         <div key={ch.id} style={{ background: t.bg2, borderRadius: 10, padding: "12px 16px", marginBottom: 7 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                            <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{ch.title}</span>
-                            <div style={{ display: "flex", gap: 5 }}>
-                              <Tag color={t.sub} t={t}>{(ch.lessons || []).length} lessons</Tag>
-                              {ch.quiz && <Tag color={t.orange} t={t}>Quiz</Tag>}
-                            </div>
-                          </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: t.text, marginBottom: 8 }}>{ch.title}</div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                             {(ch.lessons || []).map(l => (
-                              <span key={l.id} style={{ background: t.card, border: `1px solid ${t.sep}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, color: t.sub }}>{l.title}</span>
+                              <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: t.card, borderRadius: 8, border: `1px solid ${t.sep}` }}>
+                                <div style={{ width: 24, height: 24, borderRadius: 6, background: l.video_url ? t.greenBg : t.bg3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: l.video_url ? t.green : t.sub, flexShrink: 0 }}>
+                                  {l.video_url ? "✓" : "▶"}
+                                </div>
+                                <span style={{ flex: 1, fontSize: 13, color: t.text }}>{l.title}</span>
+                                <span style={{ fontSize: 12, color: t.sub, fontFamily: "ui-monospace,monospace" }}>{l.duration}</span>
+                                <Btn sm variant="secondary" onClick={() => setModal({ type: "upload", lesson: l, courseId: c.id })} t={t}>
+                                  {l.video_url ? "Replace" : "Upload"}
+                                </Btn>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -820,13 +956,50 @@ function Admin({ me, onLogout, t }) {
           </div>
         )}
 
+        {tab === "videos" && (
+          <div style={{ animation: "fade 0.3s ease" }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Videos</h1>
+            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Upload videos directly to each lesson.</div>
+            {courses.map(c => {
+              const lessons = (c.chapters || []).flatMap(ch => ch.lessons || []);
+              const withVideo = lessons.filter(l => l.video_url).length;
+              return (
+                <Card key={c.id} t={t} style={{ marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ height: 3, background: c.color || t.blue }} />
+                  <div style={{ padding: "18px 22px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                      <div style={{ fontSize: 17, fontWeight: 500, color: t.text }}>{c.title}</div>
+                      <Tag color={withVideo === lessons.length ? t.green : t.orange} t={t}>{withVideo}/{lessons.length} uploaded</Tag>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {lessons.map(l => (
+                        <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: t.bg2, borderRadius: 10 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 9, background: l.video_url ? t.greenBg : t.bg3, border: `1px solid ${l.video_url ? t.green + "25" : t.sep}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>
+                            {l.video_url ? "✓" : "🎬"}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{l.title}</div>
+                            <div style={{ fontSize: 12, color: t.sub, marginTop: 2 }}>{l.video_url ? "Video uploaded" : "No video yet"}</div>
+                          </div>
+                          <Btn sm variant={l.video_url ? "secondary" : "primary"} onClick={() => setModal({ type: "upload", lesson: l, courseId: c.id })} t={t}>
+                            {l.video_url ? "Replace" : "Upload"}
+                          </Btn>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+
         {tab === "codes" && (
           <div style={{ animation: "fade 0.3s ease" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Access Codes</h1>
-            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Generate codes for students after payment.</div>
+            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Generate and share codes after payment.</div>
 
-            {/* Generator */}
-            <Card t={t} style={{ padding: "24px", marginBottom: 16 }}>
+            <Card t={t} style={{ padding: 24, marginBottom: 16 }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: t.text, marginBottom: 20 }}>Generate New Codes</div>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 16 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -841,25 +1014,22 @@ function Admin({ me, onLogout, t }) {
                   <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Quantity</label>
                   <input type="number" min="1" max="50" value={genCount} onChange={e => setGenCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
                     style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15 }}
-                    onFocus={e => e.target.style.borderColor = t.blue}
-                    onBlur={e => e.target.style.borderColor = "transparent"} />
+                    onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"} />
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <Btn onClick={generateCodes} disabled={!genCourseId} t={t}>Generate {genCount} Code{genCount > 1 ? "s" : ""}</Btn>
                 {generatedCodes.length > 0 && <Btn variant="secondary" onClick={copyAll} t={t}>Copy All</Btn>}
               </div>
-
-              {/* Generated codes preview */}
               {generatedCodes.length > 0 && (
-                <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 7 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: t.sub, marginBottom: 4 }}>Generated — click to copy</div>
                   {generatedCodes.map(c => (
                     <div key={c.id} onClick={() => copyCode(c.code)}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: t.bg2, borderRadius: 10, padding: "12px 16px", cursor: "pointer", transition: "background 0.15s", border: `1px solid ${copied === c.code ? t.green + "40" : "transparent"}` }}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: t.bg2, borderRadius: 10, padding: "12px 16px", cursor: "pointer", border: `1px solid ${copied === c.code ? t.green + "40" : "transparent"}`, transition: "all 0.15s" }}
                       onMouseEnter={e => e.currentTarget.style.background = t.bg3}
                       onMouseLeave={e => e.currentTarget.style.background = t.bg2}>
-                      <span style={{ fontFamily: "ui-monospace, 'SF Mono', monospace", fontSize: 16, fontWeight: 500, color: t.text, letterSpacing: "0.1em" }}>{c.code}</span>
+                      <span style={{ fontFamily: "ui-monospace,'SF Mono',monospace", fontSize: 16, fontWeight: 500, color: t.text, letterSpacing: "0.1em" }}>{c.code}</span>
                       <span style={{ fontSize: 12, color: copied === c.code ? t.green : t.sub }}>{copied === c.code ? "Copied!" : "Copy"}</span>
                     </div>
                   ))}
@@ -867,7 +1037,6 @@ function Admin({ me, onLogout, t }) {
               )}
             </Card>
 
-            {/* All codes list */}
             <Card t={t} style={{ overflow: "hidden" }}>
               <div style={{ padding: "16px 22px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 15, fontWeight: 500, color: t.text }}>All Codes</div>
@@ -879,17 +1048,15 @@ function Admin({ me, onLogout, t }) {
               <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr", padding: "12px 22px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
                 {["Code", "Course", "Status", "Used by"].map(h => <span key={h} style={{ fontSize: 12, fontWeight: 500, color: t.sub }}>{h}</span>)}
               </div>
-              {codes.length === 0 && (
-                <div style={{ padding: "40px", textAlign: "center", color: t.sub, fontSize: 14 }}>No codes generated yet.</div>
-              )}
-              {codes.map((c, i) => {
+              {codes.length === 0 && <div style={{ padding: 40, textAlign: "center", color: t.sub, fontSize: 14 }}>No codes generated yet.</div>}
+              {codes.map(c => {
                 const course = courses.find(x => x.id === c.course_id);
                 return (
                   <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr", padding: "13px 22px", borderBottom: `1px solid ${t.sep}`, alignItems: "center" }}>
-                    <span style={{ fontFamily: "ui-monospace, 'SF Mono', monospace", fontSize: 14, color: c.used ? t.muted : t.text, letterSpacing: "0.08em" }}>{c.code}</span>
+                    <span style={{ fontFamily: "ui-monospace,'SF Mono',monospace", fontSize: 14, color: c.used ? t.muted : t.text, letterSpacing: "0.08em" }}>{c.code}</span>
                     <span style={{ fontSize: 13, color: t.sub }}>{course?.title || "—"}</span>
                     <Tag color={c.used ? t.sub : t.green} t={t}>{c.used ? "Used" : "Available"}</Tag>
-                    <span style={{ fontSize: 12, color: t.sub, fontFamily: "ui-monospace, monospace" }}>{c.used_by || "—"}</span>
+                    <span style={{ fontSize: 12, color: t.sub, fontFamily: "ui-monospace,monospace" }}>{c.used_by || "—"}</span>
                   </div>
                 );
               })}
@@ -923,7 +1090,7 @@ function Admin({ me, onLogout, t }) {
                 <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 22 }}>Leaderboard</div>
                 {active.sort((a, b) => pct(b) - pct(a)).slice(0, 8).map((s, i) => (
                   <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: i > 0 ? `1px solid ${t.sep}` : "none" }}>
-                    <span style={{ fontSize: 13, color: t.muted, minWidth: 22, fontFamily: "ui-monospace, monospace" }}>#{i + 1}</span>
+                    <span style={{ fontSize: 13, color: t.muted, minWidth: 22, fontFamily: "ui-monospace,monospace" }}>#{i + 1}</span>
                     <Av name={s.name} size={28} t={t} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 500, color: t.text, marginBottom: 4 }}>{s.name}</div>
@@ -975,10 +1142,8 @@ function StudentView({ me: initMe, onLogout, t }) {
     setMe(m => ({ ...m, progress: np }));
   };
 
-  const onRedeemSuccess = async (courseTitle) => {
-    setRedeem(false);
-    setRedeemSuccess(courseTitle);
-    // Refresh enrollment
+  const onRedeemSuccess = async courseTitle => {
+    setRedeem(false); setRedeemSuccess(courseTitle);
     const updated = await db.get("students", { id: me.id });
     if (updated?.[0]) setMe(updated[0]);
     const updatedCourses = await db.get("courses");
@@ -992,19 +1157,16 @@ function StudentView({ me: initMe, onLogout, t }) {
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg }}>
-      {/* Redeem modal */}
       {redeem && <RedeemModal studentId={me.id} studentEmail={me.email} courses={courses} onSuccess={onRedeemSuccess} onClose={() => setRedeem(false)} t={t} />}
-
-      {/* Success toast */}
       {redeemSuccess && (
-        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: t.card, border: `1px solid ${t.green}25`, borderRadius: 12, padding: "14px 22px", display: "flex", alignItems: "center", gap: 10, boxShadow: t.shadowLg, animation: "fadeUp 0.3s ease" }}>
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: t.card, border: `1px solid ${t.green}25`, borderRadius: 12, padding: "14px 22px", display: "flex", alignItems: "center", gap: 10, boxShadow: t.shadowLg, animation: "fadeUp 0.3s ease", whiteSpace: "nowrap" }}>
           <span style={{ fontSize: 18 }}>🎉</span>
           <span style={{ fontSize: 14, color: t.text, fontWeight: 500 }}><b>{redeemSuccess}</b> unlocked!</span>
         </div>
       )}
 
       {/* Nav */}
-      <div style={{ position: "sticky", top: 0, zIndex: 100, background: t.bg + "e8", backdropFilter: "blur(20px) saturate(180%)", borderBottom: `1px solid ${t.sep}`, WebkitBackdropFilter: "blur(20px) saturate(180%)" }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 100, background: t.bg + "e8", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderBottom: `1px solid ${t.sep}` }}>
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", height: 52 }}>
           <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase", flexShrink: 0 }}>AWAD</div>
           <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
@@ -1028,18 +1190,16 @@ function StudentView({ me: initMe, onLogout, t }) {
               <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Hello, {me.name?.split(" ")[0]}.</h1>
               <div style={{ fontSize: 15, color: t.sub }}>Continue learning where you left off.</div>
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 28 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 28 }}>
               <Stat label="Lessons completed" value={totalW} t={t} i={0} />
               <Stat label="Overall progress" value={`${overallPct}%`} t={t} i={1} />
               <Stat label="Courses enrolled" value={mine.length} t={t} i={2} />
             </div>
-
             {mine.length === 0 ? (
               <Card t={t} style={{ padding: "48px 32px", textAlign: "center" }}>
                 <div style={{ fontSize: 40, marginBottom: 16 }}>📚</div>
                 <div style={{ fontSize: 19, fontWeight: 300, color: t.text, marginBottom: 8 }}>No courses yet</div>
-                <div style={{ fontSize: 14, color: t.sub, marginBottom: 22 }}>Enter your access code to unlock a course.</div>
+                <div style={{ fontSize: 14, color: t.sub, marginBottom: 22 }}>Enter your access code to get started.</div>
                 <Btn onClick={() => setRedeem(true)} t={t}>Enter Access Code</Btn>
               </Card>
             ) : (
@@ -1076,7 +1236,7 @@ function StudentView({ me: initMe, onLogout, t }) {
               <Btn variant="secondary" onClick={() => setRedeem(true)} t={t}>+ Enter Code</Btn>
             </div>
             {mine.length === 0 ? (
-              <Card t={t} style={{ padding: "48px", textAlign: "center" }}>
+              <Card t={t} style={{ padding: 48, textAlign: "center" }}>
                 <div style={{ fontSize: 15, color: t.sub }}>No courses yet. Enter an access code to get started.</div>
               </Card>
             ) : (
@@ -1108,8 +1268,8 @@ function StudentView({ me: initMe, onLogout, t }) {
                                   return (
                                     <div key={l.id} onClick={() => setPlayer({ lesson: l, cid: c.id })}
                                       style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: watched ? (c.color || t.blue) + "08" : t.bg2, border: `1.5px solid ${watched ? (c.color || t.blue) + "20" : "transparent"}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
-                                      onMouseEnter={e => { e.currentTarget.style.transform = "translateX(4px)"; }}
-                                      onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}>
+                                      onMouseEnter={e => e.currentTarget.style.transform = "translateX(4px)"}
+                                      onMouseLeave={e => e.currentTarget.style.transform = "none"}>
                                       <div style={{ width: 28, height: 28, borderRadius: 7, background: watched ? (c.color || t.blue) + "15" : t.bg3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: watched ? (c.color || t.blue) : t.sub, flexShrink: 0, fontWeight: 600 }}>
                                         {watched ? "✓" : "▶"}
                                       </div>
@@ -1117,6 +1277,7 @@ function StudentView({ me: initMe, onLogout, t }) {
                                         <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{l.title}</div>
                                         <div style={{ fontSize: 12, color: t.sub, marginTop: 2 }}>{l.duration}</div>
                                       </div>
+                                      {!l.video_url && <Tag color={t.sub} t={t}>Preview</Tag>}
                                       {watched && <Tag color={c.color || t.blue} t={t}>Done</Tag>}
                                     </div>
                                   );
@@ -1180,21 +1341,11 @@ function StudentView({ me: initMe, onLogout, t }) {
                           <Track value={quizzes.length ? (qDone / quizzes.length) * 100 : 0} height={5} t={t} />
                         </div>
                       )}
-                      {quizzes.map(ch => sp.quizScores?.[ch.quiz.id] !== undefined && (
-                        <div key={ch.quiz.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: t.bg2, borderRadius: 8 }}>
-                          <span style={{ fontSize: 13, color: t.sub }}>{ch.quiz.title}</span>
-                          <Tag color={sp.quizScores[ch.quiz.id] >= 70 ? t.green : t.red} t={t}>{sp.quizScores[ch.quiz.id]}%</Tag>
-                        </div>
-                      ))}
                     </div>
                   </Card>
                 );
               })}
-              {mine.length === 0 && (
-                <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "60px", color: t.sub, fontSize: 15 }}>
-                  No courses enrolled yet.
-                </div>
-              )}
+              {mine.length === 0 && <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 60, color: t.sub, fontSize: 15 }}>No courses enrolled yet.</div>}
             </div>
           </div>
         )}
