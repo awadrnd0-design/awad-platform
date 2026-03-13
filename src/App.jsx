@@ -246,17 +246,15 @@ function Auth({ onLogin, t }) {
   const login = async () => {
     setErr(""); setLoading(true);
     try {
-      const admins = await db.get("admins", { email });
-      if (admins?.length && admins[0].password === pass) {
-        setLoading(false);
-        return onLogin("admin", admins[0], keep);
-      }
-      const studs = await db.get("students", { email });
-      if (studs?.length && studs[0].password === pass) {
-        setLoading(false);
-        return onLogin("student", studs[0], keep);
-      }
-      setErr("Incorrect email or password.");
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login", email, password: pass })
+      });
+      const data = await res.json();
+      if (data.error) { setErr(data.error); setLoading(false); return; }
+      setLoading(false);
+      return onLogin(data.role, data.user, keep);
     } catch { setErr("Something went wrong. Please try again."); }
     setLoading(false);
   };
@@ -266,14 +264,14 @@ function Auth({ onLogin, t }) {
     if (pass.length < 6) return setErr("Password must be at least 6 characters.");
     setLoading(true);
     try {
-      const ex = await db.get("students", { email });
-      if (ex?.length) { setLoading(false); return setErr("An account with this email already exists."); }
-      const result = await db.insert("students", { name, email, password: pass, status: "active", enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {} });
-      if (result?.[0]) {
-        onLogin("student", result[0], keep);
-      } else {
-        setDone(true);
-      }
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "signup", name, email, password: pass })
+      });
+      const data = await res.json();
+      if (data.error) { setErr(data.error); setLoading(false); return; }
+      onLogin("student", data.user, keep);
     } catch { setErr("Something went wrong. Please try again."); }
     setLoading(false);
   };
@@ -516,13 +514,15 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
       )}
 
       {/* Watermark */}
-      {[...Array(6)].map((_, i) => (
-        <div key={i} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" }}>
-          <div style={{ color: "rgba(255,255,255,0.018)", fontSize: 11, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 3, transform: `rotate(-15deg) translateY(${(i - 2.5) * 110}px)` }}>
-            {[...Array(12)].fill(userEmail).join("  ·  ")}
+      <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
+        {[...Array(7)].map((_, i) => (
+          <div key={i} style={{ position: "absolute", left: "-20%", right: "-20%", top: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(-18deg) translateY(${i * 130 - 80}px)` }}>
+            <div style={{ color: "rgba(255,255,255,0.07)", fontSize: 13, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 4, fontWeight: 500 }}>
+              {[...Array(8)].fill(userEmail).join("   ·   ")}
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
 
       {/* Buffering spinner */}
       {loading && lesson.video_url && (
@@ -1859,4 +1859,3 @@ export default function App() {
     </>
   );
 }
-
