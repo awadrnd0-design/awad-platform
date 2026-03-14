@@ -449,20 +449,27 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
     if (lesson.video_url) getSignedVideoUrl(lesson.video_url).then(url => setSignedUrl(url));
   }, [lesson.video_url]);
 
-  // Show resume prompt if there's a saved time > 5 seconds
+  // Show resume prompt ONCE on mount if saved time > 5s
+  const resumeShown = useRef(false);
   useEffect(() => {
-    if (resumeFrom && resumeFrom > 5) setShowResume(true);
-  }, [resumeFrom]);
+    if (resumeFrom && resumeFrom > 5 && !resumeShown.current) {
+      resumeShown.current = true;
+      setShowResume(true);
+    }
+  }, []);
 
-  // Save progress every 5 seconds while playing
+  // Save progress every 10 seconds while playing (not on every render)
+  const saveTimer = useRef(null);
   useEffect(() => {
-    if (!playing) return;
-    const iv = setInterval(() => {
-      if (videoRef.current && !videoRef.current.paused) {
-        onSaveTime?.(Math.floor(videoRef.current.currentTime));
-      }
-    }, 5000);
-    return () => clearInterval(iv);
+    clearInterval(saveTimer.current);
+    if (playing) {
+      saveTimer.current = setInterval(() => {
+        if (videoRef.current && !videoRef.current.paused) {
+          onSaveTime?.(Math.floor(videoRef.current.currentTime));
+        }
+      }, 10000);
+    }
+    return () => clearInterval(saveTimer.current);
   }, [playing]);
 
   const fmt = s => {
@@ -684,13 +691,11 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
         </div>
       )}
 
-      {/* Dual-mode watermark — works on light & dark video */}
+      {/* Watermark */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
-        {[...Array(7)].map((_, i) => (
-          <div key={i} style={{ position: "absolute", left: "-20%", right: "-20%", top: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(-18deg) translateY(${i * 130 - 80}px)` }}>
-            <div style={{ fontSize: 12, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 4, fontWeight: 500,
-              color: "rgba(255,255,255,0.06)",
-              textShadow: "0 0 8px rgba(0,0,0,0.8), 1px 1px 0 rgba(0,0,0,0.5), -1px -1px 0 rgba(0,0,0,0.5)" }}>
+        {[...Array(6)].map((_, i) => (
+          <div key={i} style={{ position: "absolute", left: "-20%", right: "-20%", top: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(-18deg) translateY(${i * 130 - 60}px)` }}>
+            <div style={{ fontSize: 12, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 4, fontWeight: 400, color: "rgba(200,200,200,0.09)" }}>
               {[...Array(8)].fill(userEmail).join("   ·   ")}
             </div>
           </div>
