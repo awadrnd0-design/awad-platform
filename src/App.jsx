@@ -187,18 +187,34 @@ const GS = ({ dark }) => (
     .tab-content{animation:slideIn 0.25s cubic-bezier(0.4,0,0.2,1)}
     .hover-lift{transition:transform 0.2s,box-shadow 0.2s}
     .hover-lift:hover{transform:translateY(-2px)}
-    @media(max-width:768px){
-      .admin-sidebar{position:fixed!important;bottom:0!important;left:0!important;right:0!important;width:100%!important;height:auto!important;flex-direction:row!important;border-right:none!important;border-top:1px solid rgba(128,128,128,0.15)!important;z-index:200!important;padding:0!important;overflow-x:auto}
-      .admin-sidebar .sidebar-logo{display:none!important}
-      .admin-sidebar nav{flex-direction:row!important;padding:0!important;overflow-x:auto!important;gap:0!important;flex:1}
-      .admin-sidebar .sidebar-footer{display:none!important}
-      .admin-main{padding:20px 16px 90px!important}
-      .admin-nav-btn{flex-direction:column!important;gap:2px!important;padding:8px 12px!important;font-size:10px!important;border-radius:0!important;min-width:60px!important;align-items:center!important;justify-content:center!important;border-bottom:none!important;border-top:2px solid transparent}
-      .admin-nav-btn.active{border-top-color:var(--blue)!important;background:transparent!important}
-      .student-nav{height:48px!important}
+    /* ── Medium screens (tablets, split windows 600-900px) ── */
+    @media(max-width:900px){
+      .admin-sidebar{width:64px!important}
+      .admin-sidebar .sidebar-logo{padding:16px 0!important;text-align:center}
+      .admin-sidebar .sidebar-logo .logo-name{display:none!important}
+      .admin-sidebar .sidebar-logo .logo-dot{display:block!important;width:8px;height:8px;border-radius:50%;background:currentColor;margin:0 auto}
+      .admin-sidebar nav{padding:6px 4px!important}
+      .admin-nav-btn span{display:none!important}
+      .admin-nav-btn{padding:10px!important;justify-content:center!important;border-radius:10px!important}
+      .sidebar-footer .footer-name{display:none!important}
+      .sidebar-footer{padding:8px 4px!important}
+      .admin-main{padding:24px 20px!important}
       .stat-grid{grid-template-columns:1fr 1fr!important}
       .card-grid{grid-template-columns:1fr!important}
-      .table-grid{grid-template-columns:1fr 1fr auto!important}
+    }
+    /* ── Small screens (phones < 600px) ── */
+    @media(max-width:600px){
+      .admin-sidebar{position:fixed!important;bottom:0!important;left:0!important;right:0!important;width:100%!important;height:56px!important;flex-direction:row!important;border-right:none!important;border-top:1px solid rgba(128,128,128,0.15)!important;z-index:200!important;padding:0!important;overflow-x:auto}
+      .admin-sidebar .sidebar-logo{display:none!important}
+      .admin-sidebar nav{flex-direction:row!important;padding:0!important;overflow-x:auto!important;gap:0!important;flex:1;height:56px}
+      .admin-sidebar .sidebar-footer{display:none!important}
+      .admin-main{padding:16px 14px 72px!important}
+      .admin-nav-btn{flex-direction:column!important;gap:1px!important;padding:6px 8px!important;font-size:10px!important;border-radius:0!important;min-width:56px!important;align-items:center!important;justify-content:center!important;height:56px!important}
+      .admin-nav-btn span{display:block!important;font-size:9px!important;margin-top:2px}
+      .admin-nav-btn.active{border-top:2px solid var(--blue)!important;background:transparent!important}
+      .stat-grid{grid-template-columns:1fr 1fr!important}
+      .card-grid{grid-template-columns:1fr!important}
+      .student-nav-links button{padding:0 8px!important;font-size:13px!important}
     }
   `}</style>
 );
@@ -399,38 +415,39 @@ function Auth({ onLogin, t }) {
 
 // ─── VIDEO PLAYER ────────────────────────────────────────────────────
 function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
-  const videoRef   = useRef(null);
-  const wrapRef    = useRef(null);
-  const seekRef    = useRef(null);
-  const hideTimer  = useRef(null);
+  const videoRef    = useRef(null);
+  const wrapRef     = useRef(null);
+  const seekRef     = useRef(null);
+  const hideTimer   = useRef(null);
+  const seekDragging= useRef(false);
+  const tapTimer    = useRef(null);
+  const tapCount    = useRef(0);
 
-  const [playing,    setPlaying]    = useState(false);
-  const [currentTime,setCurrentTime]= useState(0);
-  const [duration,   setDuration]   = useState(0);
-  const [buffered,   setBuffered]   = useState(0);
-  const [volume,     setVolume]     = useState(1);
-  const [muted,      setMuted]      = useState(false);
-  const [speed,      setSpeed]      = useState(1);
-  const [showSpeed,  setShowSpeed]  = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
-  const [showCtrl,   setShowCtrl]   = useState(true);
-  const [done,       setDone]       = useState(false);
-  const [loading,    setLoading]    = useState(true);
-  const [signedUrl,  setSignedUrl]  = useState(null);
-
-  // Fetch signed URL on mount
-  useEffect(() => {
-    if (lesson.video_url) {
-      getSignedVideoUrl(lesson.video_url).then(url => {
-        setSignedUrl(url);
-        setLoading(false);
-      });
-    } else {
-      setLoading(false);
-    }
-  }, [lesson.video_url]);
+  const [playing,     setPlaying]     = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration,    setDuration]    = useState(0);
+  const [buffered,    setBuffered]     = useState(0);
+  const [volume,      setVolume]      = useState(() => parseFloat(localStorage.getItem("awad_vol") || "1"));
+  const [muted,       setMuted]       = useState(false);
+  const [speed,       setSpeed]       = useState(1);
+  const [showSpeed,   setShowSpeed]   = useState(false);
+  const [fullscreen,  setFullscreen]  = useState(false);
+  const [showCtrl,    setShowCtrl]    = useState(true);
+  const [done,        setDone]        = useState(false);
+  const [loading,     setLoading]     = useState(true);
+  const [signedUrl,   setSignedUrl]   = useState(null);
+  const [hoverTime,   setHoverTime]   = useState(null);   // {pct, time} for seek preview
+  const [skipAnim,    setSkipAnim]    = useState(null);   // "left" | "right"
+  const [seekPct,     setSeekPct]     = useState(0);
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+  // Signed URL
+  useEffect(() => {
+    if (lesson.video_url) {
+      getSignedVideoUrl(lesson.video_url).then(url => { setSignedUrl(url); });
+    }
+  }, [lesson.video_url]);
 
   const fmt = s => {
     if (!s || isNaN(s)) return "0:00";
@@ -440,72 +457,89 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
     return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}` : `${m}:${String(sec).padStart(2,"0")}`;
   };
 
-  const resetHideTimer = useCallback(() => {
+  const showControls = () => {
     setShowCtrl(true);
     clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => { if (playing) setShowCtrl(false); }, 3000);
-  }, [playing]);
+    hideTimer.current = setTimeout(() => { if (videoRef.current && !videoRef.current.paused) setShowCtrl(false); }, 3000);
+  };
 
-  useEffect(() => { return () => clearTimeout(hideTimer.current); }, []);
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
 
+  // Video events
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onLoaded   = () => { setDuration(v.duration); setLoading(false); };
-    const onTime     = () => {
-      setCurrentTime(v.currentTime);
+    const onMeta    = () => { setDuration(v.duration); setLoading(false); };
+    const onTime    = () => {
+      if (!seekDragging.current) setCurrentTime(v.currentTime);
+      setSeekPct(v.duration ? (v.currentTime / v.duration) * 100 : 0);
       if (v.buffered.length) setBuffered((v.buffered.end(v.buffered.length - 1) / v.duration) * 100);
       if (!done && v.currentTime / v.duration > 0.97) { setDone(true); onComplete?.(); }
     };
-    const onPlay     = () => setPlaying(true);
-    const onPause    = () => { setPlaying(false); setShowCtrl(true); };
-    const onWaiting  = () => setLoading(true);
-    const onPlaying  = () => setLoading(false);
-    const onEnded    = () => { setDone(true); setPlaying(false); setShowCtrl(true); onComplete?.(); };
-    v.addEventListener("loadedmetadata", onLoaded);
+    const onPlay    = () => { setPlaying(true); hideTimer.current = setTimeout(() => setShowCtrl(false), 3000); };
+    const onPause   = () => { setPlaying(false); setShowCtrl(true); clearTimeout(hideTimer.current); };
+    const onWait    = () => setLoading(true);
+    const onResume  = () => setLoading(false);
+    const onEnded   = () => { setDone(true); setPlaying(false); setShowCtrl(true); onComplete?.(); };
+    v.addEventListener("loadedmetadata", onMeta);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
-    v.addEventListener("waiting", onWaiting);
-    v.addEventListener("playing", onPlaying);
+    v.addEventListener("waiting", onWait);
+    v.addEventListener("playing", onResume);
     v.addEventListener("ended", onEnded);
     return () => {
-      v.removeEventListener("loadedmetadata", onLoaded);
+      v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("timeupdate", onTime);
       v.removeEventListener("play", onPlay);
       v.removeEventListener("pause", onPause);
-      v.removeEventListener("waiting", onWaiting);
-      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("waiting", onWait);
+      v.removeEventListener("playing", onResume);
       v.removeEventListener("ended", onEnded);
     };
   }, [done]);
 
+  // Fullscreen change
   useEffect(() => {
-    const onFS = () => setFullscreen(!!document.fullscreenElement);
+    const onFS = () => setFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));
     document.addEventListener("fullscreenchange", onFS);
-    return () => document.removeEventListener("fullscreenchange", onFS);
+    document.addEventListener("webkitfullscreenchange", onFS);
+    return () => { document.removeEventListener("fullscreenchange", onFS); document.removeEventListener("webkitfullscreenchange", onFS); };
   }, []);
 
-  // Keyboard shortcuts
+  // Keyboard
   useEffect(() => {
     const onKey = e => {
       const v = videoRef.current;
-      if (!v) return;
-      if (e.code === "Space") { e.preventDefault(); v.paused ? v.play() : v.pause(); resetHideTimer(); }
-      if (e.code === "ArrowRight") { v.currentTime = Math.min(v.duration, v.currentTime + 10); resetHideTimer(); }
-      if (e.code === "ArrowLeft")  { v.currentTime = Math.max(0, v.currentTime - 10); resetHideTimer(); }
+      if (!v || e.target.tagName === "INPUT") return;
+      showControls();
+      if (e.code === "Space" || e.code === "KeyK") { e.preventDefault(); v.paused ? v.play() : v.pause(); }
+      if (e.code === "ArrowRight" || e.code === "KeyL") { e.preventDefault(); skip(10); }
+      if (e.code === "ArrowLeft"  || e.code === "KeyJ") { e.preventDefault(); skip(-10); }
+      if (e.code === "ArrowUp")   { e.preventDefault(); setVol(Math.min(1, volume + 0.1)); }
+      if (e.code === "ArrowDown") { e.preventDefault(); setVol(Math.max(0, volume - 0.1)); }
       if (e.code === "KeyF") toggleFS();
       if (e.code === "KeyM") toggleMute();
+      if (e.code === "Escape" && !document.fullscreenElement) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [volume]);
 
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
     v.paused ? v.play() : v.pause();
-    resetHideTimer();
+    showControls();
+  };
+
+  const skip = (secs) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + secs));
+    setSkipAnim(secs > 0 ? "right" : "left");
+    setTimeout(() => setSkipAnim(null), 600);
+    showControls();
   };
 
   const toggleMute = () => {
@@ -518,10 +552,12 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
   const setVol = val => {
     const v = videoRef.current;
     if (!v) return;
-    v.volume = val;
-    v.muted = val === 0;
-    setVolume(val);
-    setMuted(val === 0);
+    const clamped = Math.max(0, Math.min(1, val));
+    v.volume = clamped;
+    v.muted = clamped === 0;
+    setVolume(clamped);
+    setMuted(clamped === 0);
+    localStorage.setItem("awad_vol", clamped);
   };
 
   const setSpd = s => {
@@ -532,22 +568,70 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
     setShowSpeed(false);
   };
 
-  const seek = e => {
-    const v = videoRef.current;
-    if (!v || !seekRef.current) return;
+  // Seekbar interactions
+  const getPctFromEvent = e => {
+    if (!seekRef.current) return 0;
     const r = seekRef.current.getBoundingClientRect();
-    const p = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    v.currentTime = p * v.duration;
-    resetHideTimer();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  };
+
+  const onSeekStart = e => {
+    e.preventDefault();
+    seekDragging.current = true;
+    const pct = getPctFromEvent(e);
+    setSeekPct(pct * 100);
+    showControls();
+  };
+
+  const onSeekMove = e => {
+    if (!seekRef.current) return;
+    const r = seekRef.current.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    setHoverTime({ pct: pct * 100, time: fmt(pct * duration) });
+    if (seekDragging.current) {
+      setSeekPct(pct * 100);
+      if (videoRef.current) videoRef.current.currentTime = pct * duration;
+    }
+  };
+
+  const onSeekEnd = e => {
+    if (!seekDragging.current) return;
+    seekDragging.current = false;
+    const pct = getPctFromEvent(e);
+    if (videoRef.current) videoRef.current.currentTime = pct * duration;
+    setHoverTime(null);
+  };
+
+  // Double tap/click to skip
+  const handleVideoTap = e => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const x = clientX - rect.left;
+    const third = rect.width / 3;
+
+    tapCount.current++;
+    if (tapCount.current === 1) {
+      tapTimer.current = setTimeout(() => {
+        tapCount.current = 0;
+        if (!e.touches) togglePlay(); // single click = play/pause on desktop
+      }, 250);
+    } else if (tapCount.current === 2) {
+      clearTimeout(tapTimer.current);
+      tapCount.current = 0;
+      if (x < third) skip(-10);
+      else if (x > third * 2) skip(10);
+      else togglePlay();
+    }
   };
 
   const toggleFS = () => {
     const v = videoRef.current;
     const wrap = wrapRef.current;
-    // iOS Safari — native video fullscreen
     if (v && v.webkitEnterFullscreen && !document.fullscreenElement && !document.webkitFullscreenElement) {
-      v.webkitEnterFullscreen();
-      return;
+      v.webkitEnterFullscreen(); return;
     }
     const isFS = document.fullscreenElement || document.webkitFullscreenElement;
     if (!isFS) {
@@ -560,26 +644,24 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
     }
   };
 
-  const pct = duration ? (currentTime / duration) * 100 : 0;
-
-  const VIcon = ({ d, size = 20 }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><path d={d} /></svg>
-  );
+  const hasVideo = !!(signedUrl || lesson.video_url);
+  const volIcon = muted || volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊";
 
   return (
     <div ref={wrapRef} className="vid-wrap"
       style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#000", display: "flex", flexDirection: "column", userSelect: "none" }}
-      onMouseMove={resetHideTimer}
-      onClick={() => { setShowSpeed(false); }}>
+      onMouseMove={showControls}
+      onTouchStart={handleVideoTap}
+      onClick={e => { setShowSpeed(false); }}>
 
-      {/* Video element */}
-      {lesson.video_url ? (
+      {/* Video */}
+      {hasVideo ? (
         <video ref={videoRef} src={signedUrl || lesson.video_url}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-          onClick={e => { e.stopPropagation(); togglePlay(); }}
+          onClick={e => { e.stopPropagation(); handleVideoTap(e); }}
           playsInline />
       ) : (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }} onClick={togglePlay}>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
             <div style={{ fontSize: 15 }}>No video uploaded yet</div>
@@ -598,10 +680,20 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
         ))}
       </div>
 
-      {/* Buffering spinner */}
-      {loading && lesson.video_url && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-          <Spinner size={36} color="rgba(255,255,255,0.6)" />
+      {/* Buffering */}
+      {loading && hasVideo && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 5 }}>
+          <Spinner size={40} color="rgba(255,255,255,0.7)" />
+        </div>
+      )}
+
+      {/* Skip animation */}
+      {skipAnim && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: skipAnim === "left" ? "flex-start" : "flex-end", pointerEvents: "none", zIndex: 6, padding: "0 60px" }}>
+          <div style={{ background: "rgba(255,255,255,0.15)", borderRadius: "50%", width: 80, height: 80, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "scaleIn 0.15s ease", backdropFilter: "blur(4px)" }}>
+            <span style={{ fontSize: 22, color: "#fff" }}>{skipAnim === "left" ? "↺" : "↻"}</span>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", marginTop: 2 }}>10s</span>
+          </div>
         </div>
       )}
 
@@ -615,36 +707,51 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
       )}
 
       {/* Controls overlay */}
-      <div className="vid-ctrl" style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", opacity: showCtrl ? 1 : 0, transition: "opacity 0.3s", pointerEvents: showCtrl ? "auto" : "none" }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", opacity: showCtrl ? 1 : 0, transition: "opacity 0.3s", pointerEvents: showCtrl ? "auto" : "none", zIndex: 7 }}>
 
         {/* Top bar */}
-        <div style={{ background: "linear-gradient(to bottom,rgba(0,0,0,0.8),transparent)", padding: "16px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ background: "linear-gradient(to bottom,rgba(0,0,0,0.85),transparent)", padding: "16px 18px 32px", display: "flex", alignItems: "center", gap: 14 }}>
           <button onClick={onClose}
-            style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
+            style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0 }}>
             ← Back
           </button>
-          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 15, fontWeight: 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
-          {speed !== 1 && <span style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "3px 10px", color: "#fff", fontSize: 13, fontFamily: "ui-monospace,monospace" }}>{speed}×</span>}
+          <span style={{ color: "rgba(255,255,255,0.9)", fontSize: 15, fontWeight: 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
+          {speed !== 1 && <span style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "3px 10px", color: "#fff", fontSize: 13, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{speed}×</span>}
         </div>
 
         {/* Bottom controls */}
-        <div style={{ background: "linear-gradient(to top,rgba(0,0,0,0.9),transparent)", padding: "0 20px 18px" }}>
+        <div style={{ background: "linear-gradient(to top,rgba(0,0,0,0.95),transparent)", padding: "32px 18px 18px" }}>
 
-          {/* Seek bar */}
-          <div ref={seekRef} onClick={seek}
-            style={{ height: 4, background: "rgba(255,255,255,0.2)", borderRadius: 4, marginBottom: 14, cursor: "pointer", position: "relative", overflow: "visible" }}
-            onMouseEnter={e => e.currentTarget.style.height = "6px"}
-            onMouseLeave={e => e.currentTarget.style.height = "4px"}>
-            {/* Buffered */}
-            <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${buffered}%`, background: "rgba(255,255,255,0.3)", borderRadius: 4 }} />
-            {/* Progress */}
-            <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${pct}%`, background: "#fff", borderRadius: 4 }}>
-              <div style={{ position: "absolute", right: -6, top: "50%", transform: "translateY(-50%)", width: 12, height: 12, borderRadius: "50%", background: "#fff", boxShadow: "0 0 6px rgba(0,0,0,0.5)" }} />
+          {/* Seekbar */}
+          <div style={{ marginBottom: 12, position: "relative" }}>
+            {/* Hover time tooltip */}
+            {hoverTime && (
+              <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: `${hoverTime.pct}%`, transform: "translateX(-50%)", background: "rgba(0,0,0,0.85)", color: "#fff", fontSize: 12, padding: "3px 8px", borderRadius: 5, pointerEvents: "none", fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>
+                {hoverTime.time}
+              </div>
+            )}
+            <div ref={seekRef}
+              style={{ height: 4, background: "rgba(255,255,255,0.2)", borderRadius: 4, cursor: "pointer", position: "relative", transition: "height 0.15s" }}
+              onMouseDown={onSeekStart}
+              onMouseMove={onSeekMove}
+              onMouseLeave={() => setHoverTime(null)}
+              onMouseUp={onSeekEnd}
+              onTouchStart={onSeekStart}
+              onTouchMove={onSeekMove}
+              onTouchEnd={onSeekEnd}
+              onMouseEnter={e => e.currentTarget.style.height = "6px"}
+              onMouseOut={e => { if (!seekDragging.current) e.currentTarget.style.height = "4px"; }}>
+              {/* Buffered */}
+              <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${buffered}%`, background: "rgba(255,255,255,0.3)", borderRadius: 4, pointerEvents: "none" }} />
+              {/* Progress */}
+              <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${seekPct}%`, background: "#fff", borderRadius: 4, pointerEvents: "none" }}>
+                <div style={{ position: "absolute", right: -7, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, borderRadius: "50%", background: "#fff", boxShadow: "0 0 6px rgba(0,0,0,0.6)", transition: "transform 0.1s" }} />
+              </div>
             </div>
           </div>
 
           {/* Controls row */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {/* Play/Pause */}
             <button onClick={e => { e.stopPropagation(); togglePlay(); }}
               style={{ background: "none", border: "none", color: "#fff", fontSize: 22, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
@@ -652,46 +759,48 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
             </button>
 
             {/* Skip back */}
-            <button onClick={e => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime -= 10; }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "6px 10px", cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center", gap: 4 }}>
-              ↺ 10s
+            <button onClick={e => { e.stopPropagation(); skip(-10); }}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 13, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+              ↺<span style={{ fontSize: 11 }}>10</span>
             </button>
 
             {/* Skip forward */}
-            <button onClick={e => { e.stopPropagation(); if (videoRef.current) videoRef.current.currentTime += 10; }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 13, padding: "6px 10px", cursor: "pointer", borderRadius: 6 }}>
-              10s ↻
+            <button onClick={e => { e.stopPropagation(); skip(10); }}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 13, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
+              <span style={{ fontSize: 11 }}>10</span>↻
             </button>
 
             {/* Volume */}
             <button onClick={e => { e.stopPropagation(); toggleMute(); }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 16, padding: "6px 8px", cursor: "pointer" }}>
-              {muted || volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊"}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 16, padding: "6px 6px", cursor: "pointer", flexShrink: 0 }}>
+              {volIcon}
             </button>
-            <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume}
-              onChange={e => setVol(parseFloat(e.target.value))}
+            <input type="range" min="0" max="1" step="0.02" value={muted ? 0 : volume}
+              onChange={e => { e.stopPropagation(); setVol(parseFloat(e.target.value)); }}
               onClick={e => e.stopPropagation()}
-              style={{ width: 70, accentColor: "#fff", cursor: "pointer" }} />
+              style={{ width: 70, accentColor: "#fff", cursor: "pointer", flexShrink: 0 }} />
 
             {/* Time */}
-            <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 13, fontFamily: "ui-monospace,monospace", marginLeft: 4, flexShrink: 0 }}>
+            <span style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, fontFamily: "ui-monospace,monospace", marginLeft: 6, flexShrink: 0 }}>
               {fmt(currentTime)} / {fmt(duration)}
             </span>
 
             <div style={{ flex: 1 }} />
 
-            {/* Speed */}
-            <div style={{ position: "relative" }}>
+            {/* Speed picker */}
+            <div style={{ position: "relative", flexShrink: 0 }}>
               <button onClick={e => { e.stopPropagation(); setShowSpeed(s => !s); }}
-                style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 7, color: "#fff", padding: "5px 12px", fontSize: 13, fontFamily: "ui-monospace,monospace", cursor: "pointer", fontWeight: 500 }}>
+                style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 7, color: "#fff", padding: "5px 12px", fontSize: 13, fontFamily: "ui-monospace,monospace", cursor: "pointer", fontWeight: 500 }}>
                 {speed}×
               </button>
               {showSpeed && (
                 <div onClick={e => e.stopPropagation()}
-                  style={{ position: "absolute", bottom: "calc(100% + 10px)", right: 0, background: "rgba(30,30,30,0.96)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, overflow: "hidden", minWidth: 100, boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+                  style={{ position: "absolute", bottom: "calc(100% + 10px)", right: 0, background: "rgba(20,20,20,0.97)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, overflow: "hidden", minWidth: 110, boxShadow: "0 8px 32px rgba(0,0,0,0.7)", zIndex: 20 }}>
                   {SPEEDS.map(s => (
-                    <button key={s} onClick={() => setSpd(s)} className="speed-btn"
-                      style={{ display: "block", width: "100%", background: speed === s ? "rgba(255,255,255,0.12)" : "transparent", border: "none", color: speed === s ? "#fff" : "rgba(255,255,255,0.7)", padding: "10px 18px", fontSize: 14, fontFamily: "ui-monospace,monospace", cursor: "pointer", textAlign: "left", fontWeight: speed === s ? 600 : 400, transition: "background 0.1s" }}>
+                    <button key={s} onClick={() => setSpd(s)}
+                      style={{ display: "block", width: "100%", background: speed === s ? "rgba(255,255,255,0.1)" : "transparent", border: "none", color: speed === s ? "#fff" : "rgba(255,255,255,0.65)", padding: "10px 18px", fontSize: 14, fontFamily: "ui-monospace,monospace", cursor: "pointer", textAlign: "left", fontWeight: speed === s ? 600 : 400, transition: "background 0.1s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
+                      onMouseLeave={e => e.currentTarget.style.background = speed === s ? "rgba(255,255,255,0.1)" : "transparent"}>
                       {s === 1 ? "1× Normal" : `${s}×`}
                     </button>
                   ))}
@@ -701,8 +810,8 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
 
             {/* Fullscreen */}
             <button onClick={e => { e.stopPropagation(); toggleFS(); }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: 18, padding: "6px 8px", cursor: "pointer" }}>
-              {fullscreen ? "⛶" : "⛶"}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 20, padding: "6px 8px", cursor: "pointer", flexShrink: 0, lineHeight: 1 }}>
+              {fullscreen ? "⊡" : "⊞"}
             </button>
           </div>
         </div>
@@ -711,7 +820,6 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
   );
 }
 
-// ─── QUIZ ────────────────────────────────────────────────────────────
 function QuizModal({ quiz, existing, onSubmit, onClose, t }) {
   const [ans, setAns] = useState({});
   const [submitted, setSubmitted] = useState(existing !== undefined);
@@ -1234,13 +1342,13 @@ function Admin({ me, onLogout, t }) {
   const unusedCodes = codes.filter(c => !c.used).length;
 
   const navTabs = [
-    { id: "overview",  label: "Overview" },
-    { id: "students",  label: "Students", badge: pending.length },
-    { id: "courses",   label: "Courses" },
-    { id: "builder",   label: "Course Builder" },
-    { id: "videos",    label: "Videos" },
-    { id: "codes",     label: "Access Codes" },
-    { id: "analytics", label: "Analytics" },
+    { id: "overview",  label: "Overview",      icon: "⊞" },
+    { id: "students",  label: "Students",      icon: "◎", badge: pending.length },
+    { id: "courses",   label: "Courses",       icon: "▤" },
+    { id: "builder",   label: "Course Builder",icon: "✎" },
+    { id: "videos",    label: "Videos",        icon: "▶" },
+    { id: "codes",     label: "Access Codes",  icon: "⌘" },
+    { id: "analytics", label: "Analytics",     icon: "↗" },
   ];
 
   const ModalWrap = ({ children, maxW = 440 }) => (
@@ -1250,7 +1358,7 @@ function Admin({ me, onLogout, t }) {
   );
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: t.bg }}>
+    <div style={{ display: "flex", minHeight: "100vh", background: t.bg, position: "relative" }}>
       {toast && (
         <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 9999, background: t.card, border: `1px solid ${toast.ok ? t.green + "25" : t.red + "25"}`, borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, boxShadow: t.shadowLg, animation: "fadeUp 0.25s ease" }}>
           <div style={{ width: 7, height: 7, borderRadius: "50%", background: toast.ok ? t.green : t.red, flexShrink: 0 }} />
@@ -1328,25 +1436,28 @@ function Admin({ me, onLogout, t }) {
       {/* Sidebar */}
       <div className="admin-sidebar" style={{ width: 220, background: t.card, borderRight: `1px solid ${t.sep}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
         <div className="sidebar-logo" style={{ padding: "24px 18px 20px", borderBottom: `1px solid ${t.sep}` }}>
-          <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
-          <div style={{ fontSize: 12, color: t.sub, marginTop: 4 }}>Admin</div>
+          <div className="logo-name" style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
+          <div className="logo-name" style={{ fontSize: 12, color: t.sub, marginTop: 4 }}>Admin</div>
+          <div className="logo-dot" style={{ display: "none" }} />
         </div>
         <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
           {navTabs.map(n => (
             <button key={n.id} onClick={() => setTab(n.id)}
               className={`admin-nav-btn${tab === n.id ? " active" : ""}`}
-              style={{ background: tab === n.id ? t.bg2 : "transparent", border: "none", borderRadius: 10, padding: "10px 12px", color: tab === n.id ? t.text : t.sub, fontSize: 14, fontWeight: tab === n.id ? 500 : 400, textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)", "--blue": t.blue }}>
-              <span style={{ fontSize: "inherit" }}>{n.label}</span>
+              style={{ background: tab === n.id ? t.bg2 : "transparent", border: "none", borderRadius: 10, padding: "10px 12px", color: tab === n.id ? t.text : t.sub, fontSize: 14, fontWeight: tab === n.id ? 500 : 400, textAlign: "left", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)", "--blue": t.blue, width: "100%" }}>
+              <span style={{ fontSize: 16, flexShrink: 0, lineHeight: 1 }}>{n.icon}</span>
+              <span style={{ flex: 1, fontSize: "inherit" }}>{n.label}</span>
               {n.badge > 0 && <Tag color={t.orange} t={t}>{n.badge}</Tag>}
             </button>
           ))}
         </nav>
         <div className="sidebar-footer" style={{ padding: "12px 8px", borderTop: `1px solid ${t.sep}` }}>
           <div style={{ padding: "10px 12px", background: t.bg2, borderRadius: 10, marginBottom: 6 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: t.text }}>{me.name}</div>
-            <div style={{ fontSize: 11, color: t.sub }}>Administrator</div>
+            <div className="footer-name" style={{ fontSize: 13, fontWeight: 500, color: t.text }}>{me.name}</div>
+            <div className="footer-name" style={{ fontSize: 11, color: t.sub }}>Administrator</div>
+            <div style={{ fontSize: 18, textAlign: "center", display: "none" }} className="footer-icon"><Av name={me.name} size={28} t={t} /></div>
           </div>
-          <button onClick={onLogout} style={{ background: "none", border: "none", color: t.sub, fontSize: 13, padding: "8px 12px", cursor: "pointer", width: "100%", textAlign: "left" }}>Sign out</button>
+          <button onClick={onLogout} className="footer-name" style={{ background: "none", border: "none", color: t.sub, fontSize: 13, padding: "8px 12px", cursor: "pointer", width: "100%", textAlign: "left" }}>Sign out</button>
         </div>
       </div>
 
@@ -1713,7 +1824,7 @@ function StudentView({ me: initMe, onLogout, t }) {
       <div className="student-nav" style={{ position: "sticky", top: 0, zIndex: 100, background: t.bg + "e8", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderBottom: `1px solid ${t.sep}` }}>
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", height: 52 }}>
           <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase", flexShrink: 0 }}>AWAD</div>
-          <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
+          <div className="student-nav-links" style={{ flex: 1, display: "flex", justifyContent: "center" }}>
             {[["home", "Home"], ["courses", "Courses"], ["progress", "Progress"]].map(([id, lb]) => (
               <button key={id} onClick={() => setTab(id)} style={{ background: "none", border: "none", padding: "0 14px", height: 52, color: tab === id ? t.text : t.sub, fontSize: 14, fontWeight: tab === id ? 500 : 400, cursor: "pointer", borderBottom: `2px solid ${tab === id ? t.blue : "transparent"}`, transition: "all 0.15s", marginBottom: -1 }}>{lb}</button>
             ))}
