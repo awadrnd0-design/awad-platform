@@ -414,19 +414,20 @@ function Auth({ onLogin, t }) {
 }
 
 // ─── VIDEO PLAYER ────────────────────────────────────────────────────
-function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
-  const videoRef    = useRef(null);
-  const wrapRef     = useRef(null);
-  const seekRef     = useRef(null);
-  const hideTimer   = useRef(null);
-  const seekDragging= useRef(false);
-  const tapTimer    = useRef(null);
-  const tapCount    = useRef(0);
+function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resumeFrom, onSaveTime }) {
+  const videoRef     = useRef(null);
+  const wrapRef      = useRef(null);
+  const seekRef      = useRef(null);
+  const canvasRef    = useRef(null);
+  const hideTimer    = useRef(null);
+  const seekDragging = useRef(false);
+  const tapTimer     = useRef(null);
+  const tapCount     = useRef(0);
 
   const [playing,     setPlaying]     = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration,    setDuration]    = useState(0);
-  const [buffered,    setBuffered]     = useState(0);
+  const [buffered,    setBuffered]    = useState(0);
   const [volume,      setVolume]      = useState(() => parseFloat(localStorage.getItem("awad_vol") || "1"));
   const [muted,       setMuted]       = useState(false);
   const [speed,       setSpeed]       = useState(1);
@@ -436,24 +437,37 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
   const [done,        setDone]        = useState(false);
   const [loading,     setLoading]     = useState(true);
   const [signedUrl,   setSignedUrl]   = useState(null);
-  const [hoverTime,   setHoverTime]   = useState(null);   // {pct, time} for seek preview
-  const [skipAnim,    setSkipAnim]    = useState(null);   // "left" | "right"
   const [seekPct,     setSeekPct]     = useState(0);
+  const [hoverInfo,   setHoverInfo]   = useState(null); // {pct, time, x}
+  const [thumbUrl,    setThumbUrl]    = useState(null); // canvas frame
+  const [skipAnim,    setSkipAnim]    = useState(null);
+  const [showResume,  setShowResume]  = useState(false);
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
-  // Signed URL
   useEffect(() => {
-    if (lesson.video_url) {
-      getSignedVideoUrl(lesson.video_url).then(url => { setSignedUrl(url); });
-    }
+    if (lesson.video_url) getSignedVideoUrl(lesson.video_url).then(url => setSignedUrl(url));
   }, [lesson.video_url]);
+
+  // Show resume prompt if there's a saved time > 5 seconds
+  useEffect(() => {
+    if (resumeFrom && resumeFrom > 5) setShowResume(true);
+  }, [resumeFrom]);
+
+  // Save progress every 5 seconds while playing
+  useEffect(() => {
+    if (!playing) return;
+    const iv = setInterval(() => {
+      if (videoRef.current && !videoRef.current.paused) {
+        onSaveTime?.(Math.floor(videoRef.current.currentTime));
+      }
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [playing]);
 
   const fmt = s => {
     if (!s || isNaN(s)) return "0:00";
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = Math.floor(s % 60);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
     return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}` : `${m}:${String(sec).padStart(2,"0")}`;
   };
 
@@ -465,28 +479,26 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
 
   useEffect(() => () => clearTimeout(hideTimer.current), []);
 
-  // Video events
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const onMeta    = () => { setDuration(v.duration); setLoading(false); };
-    const onTime    = () => {
-      if (!seekDragging.current) setCurrentTime(v.currentTime);
-      setSeekPct(v.duration ? (v.currentTime / v.duration) * 100 : 0);
+    const onMeta   = () => { setDuration(v.duration); setLoading(false); };
+    const onTime   = () => {
+      if (!seekDragging.current) { setCurrentTime(v.currentTime); setSeekPct(v.duration ? (v.currentTime / v.duration) * 100 : 0); }
       if (v.buffered.length) setBuffered((v.buffered.end(v.buffered.length - 1) / v.duration) * 100);
       if (!done && v.currentTime / v.duration > 0.97) { setDone(true); onComplete?.(); }
     };
-    const onPlay    = () => { setPlaying(true); hideTimer.current = setTimeout(() => setShowCtrl(false), 3000); };
-    const onPause   = () => { setPlaying(false); setShowCtrl(true); clearTimeout(hideTimer.current); };
-    const onWait    = () => setLoading(true);
-    const onResume  = () => setLoading(false);
-    const onEnded   = () => { setDone(true); setPlaying(false); setShowCtrl(true); onComplete?.(); };
+    const onPlay   = () => { setPlaying(true); hideTimer.current = setTimeout(() => setShowCtrl(false), 3000); };
+    const onPause  = () => { setPlaying(false); setShowCtrl(true); clearTimeout(hideTimer.current); };
+    const onWait   = () => setLoading(true);
+    const onPlay2  = () => setLoading(false);
+    const onEnded  = () => { setDone(true); setPlaying(false); setShowCtrl(true); onComplete?.(); };
     v.addEventListener("loadedmetadata", onMeta);
     v.addEventListener("timeupdate", onTime);
     v.addEventListener("play", onPlay);
     v.addEventListener("pause", onPause);
     v.addEventListener("waiting", onWait);
-    v.addEventListener("playing", onResume);
+    v.addEventListener("playing", onPlay2);
     v.addEventListener("ended", onEnded);
     return () => {
       v.removeEventListener("loadedmetadata", onMeta);
@@ -494,12 +506,11 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
       v.removeEventListener("play", onPlay);
       v.removeEventListener("pause", onPause);
       v.removeEventListener("waiting", onWait);
-      v.removeEventListener("playing", onResume);
+      v.removeEventListener("playing", onPlay2);
       v.removeEventListener("ended", onEnded);
     };
   }, [done]);
 
-  // Fullscreen change
   useEffect(() => {
     const onFS = () => setFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));
     document.addEventListener("fullscreenchange", onFS);
@@ -507,7 +518,6 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
     return () => { document.removeEventListener("fullscreenchange", onFS); document.removeEventListener("webkitfullscreenchange", onFS); };
   }, []);
 
-  // Keyboard
   useEffect(() => {
     const onKey = e => {
       const v = videoRef.current;
@@ -520,107 +530,110 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
       if (e.code === "ArrowDown") { e.preventDefault(); setVol(Math.max(0, volume - 0.1)); }
       if (e.code === "KeyF") toggleFS();
       if (e.code === "KeyM") toggleMute();
-      if (e.code === "Escape" && !document.fullscreenElement) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [volume]);
 
-  const togglePlay = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.paused ? v.play() : v.pause();
-    showControls();
-  };
+  const togglePlay = () => { const v = videoRef.current; if (!v) return; v.paused ? v.play() : v.pause(); showControls(); };
 
-  const skip = (secs) => {
+  const skip = secs => {
     const v = videoRef.current;
     if (!v) return;
     v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + secs));
     setSkipAnim(secs > 0 ? "right" : "left");
-    setTimeout(() => setSkipAnim(null), 600);
+    setTimeout(() => setSkipAnim(null), 700);
     showControls();
   };
 
-  const toggleMute = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.muted = !v.muted;
-    setMuted(v.muted);
-  };
+  const toggleMute = () => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); };
 
   const setVol = val => {
-    const v = videoRef.current;
-    if (!v) return;
-    const clamped = Math.max(0, Math.min(1, val));
-    v.volume = clamped;
-    v.muted = clamped === 0;
-    setVolume(clamped);
-    setMuted(clamped === 0);
-    localStorage.setItem("awad_vol", clamped);
+    const v = videoRef.current; if (!v) return;
+    const c = Math.max(0, Math.min(1, val));
+    v.volume = c; v.muted = c === 0;
+    setVolume(c); setMuted(c === 0);
+    localStorage.setItem("awad_vol", c);
   };
 
-  const setSpd = s => {
+  const setSpd = s => { const v = videoRef.current; if (!v) return; v.playbackRate = s; setSpeed(s); setShowSpeed(false); };
+
+  // Capture frame from video for seek preview
+  const captureFrame = (timeSec) => {
     const v = videoRef.current;
-    if (!v) return;
-    v.playbackRate = s;
-    setSpeed(s);
-    setShowSpeed(false);
+    if (!v || !duration) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const savedTime = v.currentTime;
+    const tmpVideo = document.createElement("video");
+    tmpVideo.src = v.src;
+    tmpVideo.crossOrigin = "anonymous";
+    tmpVideo.muted = true;
+    tmpVideo.addEventListener("seeked", () => {
+      try {
+        canvas.width = 160; canvas.height = 90;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(tmpVideo, 0, 0, 160, 90);
+        setThumbUrl(canvas.toDataURL("image/jpeg", 0.7));
+      } catch {}
+    }, { once: true });
+    tmpVideo.currentTime = timeSec;
   };
 
-  // Seekbar interactions
-  const getPctFromEvent = e => {
+  const getPct = e => {
     if (!seekRef.current) return 0;
     const r = seekRef.current.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    return Math.max(0, Math.min(1, (cx - r.left) / r.width));
   };
 
-  const onSeekStart = e => {
-    e.preventDefault();
-    seekDragging.current = true;
-    const pct = getPctFromEvent(e);
-    setSeekPct(pct * 100);
+  const onSeekDown = e => {
+    e.preventDefault(); seekDragging.current = true;
+    const p = getPct(e);
+    setSeekPct(p * 100);
+    if (videoRef.current) videoRef.current.currentTime = p * duration;
     showControls();
   };
 
   const onSeekMove = e => {
     if (!seekRef.current) return;
     const r = seekRef.current.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-    setHoverTime({ pct: pct * 100, time: fmt(pct * duration) });
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const p = Math.max(0, Math.min(1, (cx - r.left) / r.width));
+    const timeSec = p * duration;
+    // Clamp tooltip x so it doesn't go off screen
+    const tooltipX = Math.max(80, Math.min(r.width - 80, cx - r.left));
+    setHoverInfo({ pct: p * 100, time: fmt(timeSec), x: tooltipX });
+    captureFrame(timeSec);
     if (seekDragging.current) {
-      setSeekPct(pct * 100);
-      if (videoRef.current) videoRef.current.currentTime = pct * duration;
+      setSeekPct(p * 100);
+      if (videoRef.current) videoRef.current.currentTime = timeSec;
     }
   };
 
-  const onSeekEnd = e => {
+  const onSeekUp = e => {
     if (!seekDragging.current) return;
     seekDragging.current = false;
-    const pct = getPctFromEvent(e);
-    if (videoRef.current) videoRef.current.currentTime = pct * duration;
-    setHoverTime(null);
+    const p = getPct(e);
+    if (videoRef.current) videoRef.current.currentTime = p * duration;
+    setHoverInfo(null); setThumbUrl(null);
   };
 
-  // Double tap/click to skip
   const handleVideoTap = e => {
+    if (e.target === seekRef.current) return;
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const x = clientX - rect.left;
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const x = cx - rect.left;
     const third = rect.width / 3;
-
     tapCount.current++;
     if (tapCount.current === 1) {
       tapTimer.current = setTimeout(() => {
         tapCount.current = 0;
-        if (!e.touches) togglePlay(); // single click = play/pause on desktop
+        if (!e.touches) togglePlay();
       }, 250);
     } else if (tapCount.current === 2) {
-      clearTimeout(tapTimer.current);
-      tapCount.current = 0;
+      clearTimeout(tapTimer.current); tapCount.current = 0;
       if (x < third) skip(-10);
       else if (x > third * 2) skip(10);
       else togglePlay();
@@ -628,38 +641,40 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
   };
 
   const toggleFS = () => {
-    const v = videoRef.current;
-    const wrap = wrapRef.current;
-    if (v && v.webkitEnterFullscreen && !document.fullscreenElement && !document.webkitFullscreenElement) {
-      v.webkitEnterFullscreen(); return;
-    }
+    const v = videoRef.current, wrap = wrapRef.current;
+    if (v && v.webkitEnterFullscreen && !document.fullscreenElement && !document.webkitFullscreenElement) { v.webkitEnterFullscreen(); return; }
     const isFS = document.fullscreenElement || document.webkitFullscreenElement;
-    if (!isFS) {
-      const el = wrap || v;
-      if (el?.requestFullscreen) el.requestFullscreen();
-      else if (el?.webkitRequestFullscreen) el.webkitRequestFullscreen();
-    } else {
-      if (document.exitFullscreen) document.exitFullscreen();
-      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-    }
+    if (!isFS) { const el = wrap || v; el?.requestFullscreen ? el.requestFullscreen() : el?.webkitRequestFullscreen?.(); }
+    else { document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen?.(); }
   };
 
   const hasVideo = !!(signedUrl || lesson.video_url);
   const volIcon = muted || volume === 0 ? "🔇" : volume < 0.5 ? "🔉" : "🔊";
+
+  // SVG icons
+  const PlayIcon  = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>;
+  const PauseIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>;
+  const BackIcon  = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="rgba(255,255,255,0.85)"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="12" y="15" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.85)" fontFamily="sans-serif">10</text></svg>;
+  const FwdIcon   = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="rgba(255,255,255,0.85)"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/><text x="12" y="15" textAnchor="middle" fontSize="7" fill="rgba(255,255,255,0.85)" fontFamily="sans-serif">10</text></svg>;
+  const FSIcon    = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="rgba(255,255,255,0.85)">{fullscreen ? <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/> : <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>}</svg>;
+  const MuteIcon  = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="rgba(255,255,255,0.85)"><path d={muted || volume === 0 ? "M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" : volume < 0.5 ? "M18.5 12A4.5 4.5 0 0 0 16 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z" : "M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"}/></svg>;
 
   return (
     <div ref={wrapRef} className="vid-wrap"
       style={{ position: "fixed", inset: 0, zIndex: 3000, background: "#000", display: "flex", flexDirection: "column", userSelect: "none" }}
       onMouseMove={showControls}
       onTouchStart={handleVideoTap}
-      onClick={e => { setShowSpeed(false); }}>
+      onClick={() => setShowSpeed(false)}>
+
+      {/* Hidden canvas for thumbnails */}
+      <canvas ref={canvasRef} style={{ display: "none" }} />
 
       {/* Video */}
       {hasVideo ? (
         <video ref={videoRef} src={signedUrl || lesson.video_url}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
           onClick={e => { e.stopPropagation(); handleVideoTap(e); }}
-          playsInline />
+          playsInline crossOrigin="anonymous" />
       ) : (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
@@ -669,11 +684,13 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
         </div>
       )}
 
-      {/* Watermark */}
+      {/* Dual-mode watermark — works on light & dark video */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
         {[...Array(7)].map((_, i) => (
           <div key={i} style={{ position: "absolute", left: "-20%", right: "-20%", top: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(-18deg) translateY(${i * 130 - 80}px)` }}>
-            <div style={{ color: "rgba(255,255,255,0.07)", fontSize: 13, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 4, fontWeight: 500 }}>
+            <div style={{ fontSize: 12, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 4, fontWeight: 500,
+              color: "rgba(255,255,255,0.06)",
+              textShadow: "0 0 8px rgba(0,0,0,0.8), 1px 1px 0 rgba(0,0,0,0.5), -1px -1px 0 rgba(0,0,0,0.5)" }}>
               {[...Array(8)].fill(userEmail).join("   ·   ")}
             </div>
           </div>
@@ -683,16 +700,54 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
       {/* Buffering */}
       {loading && hasVideo && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", zIndex: 5 }}>
-          <Spinner size={40} color="rgba(255,255,255,0.7)" />
+          <Spinner size={44} color="rgba(255,255,255,0.6)" />
         </div>
       )}
 
       {/* Skip animation */}
       {skipAnim && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: skipAnim === "left" ? "flex-start" : "flex-end", pointerEvents: "none", zIndex: 6, padding: "0 60px" }}>
-          <div style={{ background: "rgba(255,255,255,0.15)", borderRadius: "50%", width: 80, height: 80, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "scaleIn 0.15s ease", backdropFilter: "blur(4px)" }}>
-            <span style={{ fontSize: 22, color: "#fff" }}>{skipAnim === "left" ? "↺" : "↻"}</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.8)", marginTop: 2 }}>10s</span>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: skipAnim === "left" ? "flex-start" : "flex-end", pointerEvents: "none", zIndex: 6, padding: "0 40px" }}>
+          <div style={{ background: "rgba(255,255,255,0.12)", borderRadius: "50%", width: 90, height: 90, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", animation: "scaleIn 0.15s ease, fade 0.5s ease 0.2s forwards", backdropFilter: "blur(6px)" }}>
+            <span style={{ fontSize: 28, color: "#fff" }}>{skipAnim === "left" ? "↺" : "↻"}</span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2, fontWeight: 500 }}>10 sec</span>
+          </div>
+        </div>
+      )}
+
+      {/* User info card — bottom right */}
+      <div style={{ position: "absolute", bottom: 80, right: 16, zIndex: 8, pointerEvents: "none" }}>
+        <div style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "8px 12px" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", fontFamily: "ui-monospace,monospace", lineHeight: 1.6 }}>
+            <div style={{ color: "rgba(255,255,255,0.75)", fontWeight: 600, fontSize: 12 }}>{userName}</div>
+            <div>{userEmail}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Resume prompt */}
+      {showResume && !done && (
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 11, animation: "scaleIn 0.2s ease" }}>
+          <div style={{ background: "rgba(28,28,30,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 18, padding: "32px 36px", textAlign: "center", maxWidth: 320, width: "90%" }}>
+            <div style={{ fontSize: 36, marginBottom: 16 }}>▶</div>
+            <div style={{ fontSize: 18, fontWeight: 500, color: "#fff", marginBottom: 8 }}>Continue watching?</div>
+            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", marginBottom: 28 }}>
+              You left off at <span style={{ color: "#fff", fontFamily: "ui-monospace,monospace", fontWeight: 600 }}>{(() => { const s = resumeFrom; const m = Math.floor(s/60); const sec = s%60; return `${m}:${String(sec).padStart(2,"0")}`; })()}</span>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button onClick={() => {
+                setShowResume(false);
+                if (videoRef.current) { videoRef.current.currentTime = 0; setSeekPct(0); setCurrentTime(0); }
+              }} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, padding: "10px 20px", color: "rgba(255,255,255,0.7)", fontSize: 14, cursor: "pointer", fontWeight: 500 }}>
+                Start Over
+              </button>
+              <button onClick={() => {
+                setShowResume(false);
+                if (videoRef.current) { videoRef.current.currentTime = resumeFrom; setSeekPct(duration ? (resumeFrom / duration) * 100 : 0); setCurrentTime(resumeFrom); }
+                setTimeout(() => videoRef.current?.play(), 100);
+              }} style={{ background: "#0a84ff", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontSize: 14, cursor: "pointer", fontWeight: 500 }}>
+                Resume
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -710,98 +765,105 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", opacity: showCtrl ? 1 : 0, transition: "opacity 0.3s", pointerEvents: showCtrl ? "auto" : "none", zIndex: 7 }}>
 
         {/* Top bar */}
-        <div style={{ background: "linear-gradient(to bottom,rgba(0,0,0,0.85),transparent)", padding: "16px 18px 32px", display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ background: "linear-gradient(to bottom,rgba(0,0,0,0.85) 0%,transparent 100%)", padding: "16px 18px 40px", display: "flex", alignItems: "center", gap: 14 }}>
           <button onClick={onClose}
-            style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0 }}>
-            ← Back
+            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            Back
           </button>
           <span style={{ color: "rgba(255,255,255,0.9)", fontSize: 15, fontWeight: 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
-          {speed !== 1 && <span style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "3px 10px", color: "#fff", fontSize: 13, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>{speed}×</span>}
         </div>
 
         {/* Bottom controls */}
-        <div style={{ background: "linear-gradient(to top,rgba(0,0,0,0.95),transparent)", padding: "32px 18px 18px" }}>
+        <div style={{ background: "linear-gradient(to top,rgba(0,0,0,0.95) 0%,transparent 100%)", padding: "40px 18px 16px" }}>
 
-          {/* Seekbar */}
-          <div style={{ marginBottom: 12, position: "relative" }}>
-            {/* Hover time tooltip */}
-            {hoverTime && (
-              <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: `${hoverTime.pct}%`, transform: "translateX(-50%)", background: "rgba(0,0,0,0.85)", color: "#fff", fontSize: 12, padding: "3px 8px", borderRadius: 5, pointerEvents: "none", fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>
-                {hoverTime.time}
+          {/* Seekbar with thumbnail preview */}
+          <div style={{ marginBottom: 10, position: "relative", padding: "8px 0" }}>
+            {/* Thumbnail + time tooltip */}
+            {hoverInfo && (
+              <div style={{ position: "absolute", bottom: "calc(100% + 4px)", left: hoverInfo.x, transform: "translateX(-50%)", pointerEvents: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                {thumbUrl && (
+                  <div style={{ width: 120, height: 68, borderRadius: 6, overflow: "hidden", border: "2px solid rgba(255,255,255,0.3)", boxShadow: "0 4px 16px rgba(0,0,0,0.7)" }}>
+                    <img src={thumbUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </div>
+                )}
+                <div style={{ background: "rgba(0,0,0,0.85)", color: "#fff", fontSize: 12, padding: "3px 8px", borderRadius: 5, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap" }}>
+                  {hoverInfo.time}
+                </div>
               </div>
             )}
+
+            {/* Track */}
             <div ref={seekRef}
               style={{ height: 4, background: "rgba(255,255,255,0.2)", borderRadius: 4, cursor: "pointer", position: "relative", transition: "height 0.15s" }}
-              onMouseDown={onSeekStart}
+              onMouseDown={onSeekDown}
               onMouseMove={onSeekMove}
-              onMouseLeave={() => setHoverTime(null)}
-              onMouseUp={onSeekEnd}
-              onTouchStart={onSeekStart}
+              onMouseLeave={() => { setHoverInfo(null); setThumbUrl(null); if (!seekDragging.current) seekRef.current && (seekRef.current.style.height = "4px"); }}
+              onMouseUp={onSeekUp}
+              onTouchStart={onSeekDown}
               onTouchMove={onSeekMove}
-              onTouchEnd={onSeekEnd}
-              onMouseEnter={e => e.currentTarget.style.height = "6px"}
-              onMouseOut={e => { if (!seekDragging.current) e.currentTarget.style.height = "4px"; }}>
-              {/* Buffered */}
-              <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${buffered}%`, background: "rgba(255,255,255,0.3)", borderRadius: 4, pointerEvents: "none" }} />
-              {/* Progress */}
+              onTouchEnd={onSeekUp}
+              onMouseEnter={e => e.currentTarget.style.height = "6px"}>
+              <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${buffered}%`, background: "rgba(255,255,255,0.25)", borderRadius: 4, pointerEvents: "none" }} />
               <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${seekPct}%`, background: "#fff", borderRadius: 4, pointerEvents: "none" }}>
-                <div style={{ position: "absolute", right: -7, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, borderRadius: "50%", background: "#fff", boxShadow: "0 0 6px rgba(0,0,0,0.6)", transition: "transform 0.1s" }} />
+                <div style={{ position: "absolute", right: -7, top: "50%", transform: "translateY(-50%)", width: 14, height: 14, borderRadius: "50%", background: "#fff", boxShadow: "0 0 8px rgba(0,0,0,0.6)" }} />
               </div>
             </div>
           </div>
 
           {/* Controls row */}
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+
             {/* Play/Pause */}
             <button onClick={e => { e.stopPropagation(); togglePlay(); }}
-              style={{ background: "none", border: "none", color: "#fff", fontSize: 22, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
-              {playing ? "⏸" : "▶"}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 8px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {playing ? <PauseIcon /> : <PlayIcon />}
             </button>
 
-            {/* Skip back */}
+            {/* Back 10s */}
             <button onClick={e => { e.stopPropagation(); skip(-10); }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 13, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-              ↺<span style={{ fontSize: 11 }}>10</span>
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 8px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <BackIcon />
             </button>
 
-            {/* Skip forward */}
+            {/* Fwd 10s */}
             <button onClick={e => { e.stopPropagation(); skip(10); }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 13, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3, flexShrink: 0 }}>
-              <span style={{ fontSize: 11 }}>10</span>↻
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 8px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <FwdIcon />
             </button>
 
             {/* Volume */}
             <button onClick={e => { e.stopPropagation(); toggleMute(); }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 16, padding: "6px 6px", cursor: "pointer", flexShrink: 0 }}>
-              {volIcon}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 6px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <MuteIcon />
             </button>
             <input type="range" min="0" max="1" step="0.02" value={muted ? 0 : volume}
               onChange={e => { e.stopPropagation(); setVol(parseFloat(e.target.value)); }}
               onClick={e => e.stopPropagation()}
-              style={{ width: 70, accentColor: "#fff", cursor: "pointer", flexShrink: 0 }} />
+              style={{ width: 65, accentColor: "#fff", cursor: "pointer", flexShrink: 0 }} />
 
             {/* Time */}
-            <span style={{ color: "rgba(255,255,255,0.65)", fontSize: 12, fontFamily: "ui-monospace,monospace", marginLeft: 6, flexShrink: 0 }}>
+            <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, fontFamily: "ui-monospace,monospace", marginLeft: 8, flexShrink: 0 }}>
               {fmt(currentTime)} / {fmt(duration)}
             </span>
 
             <div style={{ flex: 1 }} />
 
-            {/* Speed picker */}
+            {/* Speed */}
             <div style={{ position: "relative", flexShrink: 0 }}>
               <button onClick={e => { e.stopPropagation(); setShowSpeed(s => !s); }}
-                style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 7, color: "#fff", padding: "5px 12px", fontSize: 13, fontFamily: "ui-monospace,monospace", cursor: "pointer", fontWeight: 500 }}>
+                style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "rgba(255,255,255,0.85)", padding: "5px 11px", fontSize: 13, fontFamily: "ui-monospace,monospace", cursor: "pointer", fontWeight: 500 }}>
                 {speed}×
               </button>
               {showSpeed && (
                 <div onClick={e => e.stopPropagation()}
-                  style={{ position: "absolute", bottom: "calc(100% + 10px)", right: 0, background: "rgba(20,20,20,0.97)", backdropFilter: "blur(20px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, overflow: "hidden", minWidth: 110, boxShadow: "0 8px 32px rgba(0,0,0,0.7)", zIndex: 20 }}>
+                  style={{ position: "absolute", bottom: "calc(100% + 10px)", right: 0, background: "rgba(18,18,18,0.97)", backdropFilter: "blur(24px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, overflow: "hidden", minWidth: 110, boxShadow: "0 8px 32px rgba(0,0,0,0.8)", zIndex: 20 }}>
                   {SPEEDS.map(s => (
                     <button key={s} onClick={() => setSpd(s)}
-                      style={{ display: "block", width: "100%", background: speed === s ? "rgba(255,255,255,0.1)" : "transparent", border: "none", color: speed === s ? "#fff" : "rgba(255,255,255,0.65)", padding: "10px 18px", fontSize: 14, fontFamily: "ui-monospace,monospace", cursor: "pointer", textAlign: "left", fontWeight: speed === s ? 600 : 400, transition: "background 0.1s" }}
-                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
+                      style={{ display: "block", width: "100%", background: speed === s ? "rgba(255,255,255,0.1)" : "transparent", border: "none", color: speed === s ? "#fff" : "rgba(255,255,255,0.6)", padding: "10px 18px", fontSize: 14, fontFamily: "ui-monospace,monospace", cursor: "pointer", textAlign: "left", fontWeight: speed === s ? 600 : 400 }}
+                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
                       onMouseLeave={e => e.currentTarget.style.background = speed === s ? "rgba(255,255,255,0.1)" : "transparent"}>
-                      {s === 1 ? "1× Normal" : `${s}×`}
+                      {s === 1 ? "Normal" : `${s}×`}
                     </button>
                   ))}
                 </div>
@@ -810,8 +872,8 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
 
             {/* Fullscreen */}
             <button onClick={e => { e.stopPropagation(); toggleFS(); }}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.75)", fontSize: 20, padding: "6px 8px", cursor: "pointer", flexShrink: 0, lineHeight: 1 }}>
-              {fullscreen ? "⊡" : "⊞"}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 8px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <FSIcon />
             </button>
           </div>
         </div>
@@ -1790,6 +1852,13 @@ function StudentView({ me: initMe, onLogout, t }) {
     setMe(m => ({ ...m, progress: np }));
   };
 
+  const saveVideoTime = async (cid, lid, time) => {
+    const cp = (me.progress || {})[cid] || { watched: [], quizScores: {}, times: {} };
+    const np = { ...me.progress, [cid]: { ...cp, times: { ...(cp.times || {}), [lid]: time } } };
+    await db.update("students", me.id, { progress: np });
+    setMe(m => ({ ...m, progress: np }));
+  };
+
   const saveQuiz = async (cid, qid, score) => {
     const cp = (me.progress || {})[cid] || { watched: [], quizScores: {} };
     const np = { ...me.progress, [cid]: { ...cp, quizScores: { ...cp.quizScores, [qid]: score } } };
@@ -1807,7 +1876,8 @@ function StudentView({ me: initMe, onLogout, t }) {
   };
 
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner t={t} /></div>;
-  if (player) return <VideoPlayer lesson={player.lesson} userEmail={me.email || me.name} onClose={() => setPlayer(null)} onComplete={() => markWatched(player.cid, player.lesson.id)} t={t} />;
+  if (player) const savedTime = (me.progress || {})[player.cid]?.times?.[player.lesson.id] || 0;
+    return <VideoPlayer lesson={player.lesson} userName={me.name} userEmail={me.email || me.name} onClose={() => setPlayer(null)} onComplete={() => markWatched(player.cid, player.lesson.id)} resumeFrom={savedTime} onSaveTime={(time) => saveVideoTime(player.cid, player.lesson.id, time)} t={t} />;
   if (quiz) return <QuizModal quiz={quiz.q} existing={(me.progress || {})[quiz.cid]?.quizScores?.[quiz.q.id]} onSubmit={s => saveQuiz(quiz.cid, quiz.q.id, s)} onClose={() => setQuiz(null)} t={t} />;
 
   return (
