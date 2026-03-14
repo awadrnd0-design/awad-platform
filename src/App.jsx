@@ -21,6 +21,14 @@ const db = {
     method: "PATCH", headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(d)
   }).then(r => r.json()),
   del: (t, id) => fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`, { method: "DELETE", headers: H }),
+  setting: async (key) => {
+    const r = await fetch(`${SB_URL}/rest/v1/settings?key=eq.${key}&select=value`, { headers: H });
+    const d = await r.json();
+    return d?.[0]?.value;
+  },
+  setSetting: (key, value) => fetch(`${SB_URL}/rest/v1/settings?key=eq.${key}`, {
+    method: "PATCH", headers: { ...H, "Content-Type": "application/json" }, body: JSON.stringify({ value })
+  }),
 };
 
 // ─── SIGNED VIDEO URL ────────────────────────────────────────────────
@@ -290,6 +298,11 @@ function Auth({ onLogin, t }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [signupsOpen, setSignupsOpen] = useState(true);
+
+  useEffect(() => {
+    db.setting("signups_open").then(v => setSignupsOpen(v !== "false"));
+  }, []);
 
   const login = async () => {
     setErr(""); setLoading(true);
@@ -334,7 +347,7 @@ function Auth({ onLogin, t }) {
         </div>
         <Card t={t} style={{ overflow: "hidden" }}>
           <div style={{ display: "flex", borderBottom: `1px solid ${t.sep}` }}>
-            {[["login", "Sign In"], ["signup", "Create Account"]].map(([m, l]) => (
+            {[["login", "Sign In"], ...(signupsOpen ? [["signup", "Create Account"]] : [])].map(([m, l]) => (
               <button key={m} onClick={() => { setMode(m); setErr(""); setDone(false); }}
                 style={{ flex: 1, padding: 14, background: "transparent", border: "none", borderBottom: `2px solid ${mode === m ? t.blue : "transparent"}`, color: mode === m ? t.blue : t.sub, fontSize: 14, fontWeight: mode === m ? 600 : 400, cursor: "pointer", transition: "all 0.15s", marginBottom: -1 }}>
                 {l}
@@ -1136,6 +1149,38 @@ function CourseBuilder({ courses, setCourses, notify, t }) {
   );
 }
 
+
+// ─── SIGNUP TOGGLE ───────────────────────────────────────────────────
+function SignupToggle({ t }) {
+  const [open, setOpen] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    db.setting("signups_open").then(v => setOpen(v !== "false"));
+  }, []);
+
+  const toggle = async () => {
+    setSaving(true);
+    const newVal = !open;
+    await db.setSetting("signups_open", newVal ? "true" : "false");
+    setOpen(newVal);
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "10px 16px" }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: t.text }}>New signups</div>
+        <div style={{ fontSize: 12, color: open ? t.green : t.red, marginTop: 2 }}>{open ? "Accepting" : "Closed"}</div>
+      </div>
+      <button onClick={toggle} disabled={saving}
+        style={{ width: 44, height: 26, borderRadius: 13, background: open ? t.green : t.bg3, border: "none", cursor: "pointer", position: "relative", transition: "background 0.25s", flexShrink: 0, opacity: saving ? 0.5 : 1 }}>
+        <div style={{ position: "absolute", top: 3, left: open ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.25s cubic-bezier(0.4,0,0.2,1)", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+      </button>
+    </div>
+  );
+}
+
 function Admin({ me, onLogout, t }) {
   const [tab, setTab] = useState("overview");
   const [students, setStudents] = useState([]);
@@ -1310,8 +1355,13 @@ function Admin({ me, onLogout, t }) {
 
         {tab === "overview" && (
           <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
-            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Overview</h1>
-            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Your platform at a glance.</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+              <div>
+                <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Overview</h1>
+                <div style={{ fontSize: 15, color: t.sub }}>Your platform at a glance.</div>
+              </div>
+              <SignupToggle t={t} />
+            </div>
             <div className="stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
               <Stat label="Total students" value={students.length} t={t} i={0} />
               <Stat label="Active" value={active.length} t={t} i={1} />
