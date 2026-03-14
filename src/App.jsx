@@ -23,6 +23,36 @@ const db = {
   del: (t, id) => fetch(`${SB_URL}/rest/v1/${t}?id=eq.${id}`, { method: "DELETE", headers: H }),
 };
 
+// ─── SIGNED VIDEO URL ────────────────────────────────────────────────
+const signedUrlCache = {};
+async function getSignedVideoUrl(videoUrl) {
+  if (!videoUrl) return null;
+  // Extract key from R2 public URL
+  const key = videoUrl.replace("https://pub-4ed4d283e4954a3ea2b97c65c554eb0a.r2.dev/", "");
+  const cacheKey = key;
+  const now = Date.now();
+  // Cache for 90 minutes
+  if (signedUrlCache[cacheKey] && signedUrlCache[cacheKey].exp > now) {
+    return signedUrlCache[cacheKey].url;
+  }
+  try {
+    const res = await fetch("/api/video", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key })
+    });
+    const data = await res.json();
+    if (data.url) {
+      signedUrlCache[cacheKey] = { url: data.url, exp: now + 90 * 60 * 1000 };
+      return data.url;
+    }
+  } catch {}
+  // Fallback to public URL if signing fails
+  return videoUrl;
+}
+
+
+
 // ─── PERSISTENT SESSION ──────────────────────────────────────────────
 const SESSION_KEY = "awad_session";
 const saveSession  = s => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch {} };
@@ -128,22 +158,40 @@ const mk = dark => ({
 const GS = ({ dark }) => (
   <style>{`
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html{color-scheme:${dark ? "dark" : "light"}}
-    body{background:${dark ? "#000" : "#fff"};font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:17px;line-height:1.47059;letter-spacing:-0.022em}
+    html{color-scheme:${dark ? "dark" : "light"};-webkit-text-size-adjust:100%}
+    body{background:${dark ? "#000" : "#fff"};font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;font-size:17px;line-height:1.47059;letter-spacing:-0.022em;overflow-x:hidden}
     ::-webkit-scrollbar{width:4px}
     ::-webkit-scrollbar-thumb{background:${dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.12)"};border-radius:4px}
-    input,button,textarea,select{font-family:inherit;letter-spacing:inherit}
+    input,button,textarea,select{font-family:inherit;letter-spacing:inherit;-webkit-appearance:none}
     input:focus,textarea:focus,select:focus{outline:none}
-    button{cursor:pointer}
+    button{cursor:pointer;-webkit-tap-highlight-color:transparent}
     ::selection{background:rgba(0,113,227,0.2)}
-    @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes fadeDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
     @keyframes fade{from{opacity:0}to{opacity:1}}
-    @keyframes scaleIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
+    @keyframes scaleIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .vid-ctrl{opacity:0;transition:opacity 0.25s}
-    .vid-wrap:hover .vid-ctrl{opacity:1}
-    .vid-wrap:fullscreen .vid-ctrl{opacity:1}
+    @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+    .vid-ctrl{opacity:0;transition:opacity 0.3s}
+    .vid-wrap:hover .vid-ctrl,.vid-wrap:active .vid-ctrl{opacity:1}
+    .vid-wrap:fullscreen .vid-ctrl,:fullscreen .vid-ctrl{opacity:1}
     .speed-btn:hover{background:rgba(255,255,255,0.15)!important}
+    .tab-content{animation:slideIn 0.25s cubic-bezier(0.4,0,0.2,1)}
+    .hover-lift{transition:transform 0.2s,box-shadow 0.2s}
+    .hover-lift:hover{transform:translateY(-2px)}
+    @media(max-width:768px){
+      .admin-sidebar{position:fixed!important;bottom:0!important;left:0!important;right:0!important;width:100%!important;height:auto!important;flex-direction:row!important;border-right:none!important;border-top:1px solid rgba(128,128,128,0.15)!important;z-index:200!important;padding:0!important;overflow-x:auto}
+      .admin-sidebar .sidebar-logo{display:none!important}
+      .admin-sidebar nav{flex-direction:row!important;padding:0!important;overflow-x:auto!important;gap:0!important;flex:1}
+      .admin-sidebar .sidebar-footer{display:none!important}
+      .admin-main{padding:20px 16px 90px!important}
+      .admin-nav-btn{flex-direction:column!important;gap:2px!important;padding:8px 12px!important;font-size:10px!important;border-radius:0!important;min-width:60px!important;align-items:center!important;justify-content:center!important;border-bottom:none!important;border-top:2px solid transparent}
+      .admin-nav-btn.active{border-top-color:var(--blue)!important;background:transparent!important}
+      .student-nav{height:48px!important}
+      .stat-grid{grid-template-columns:1fr 1fr!important}
+      .card-grid{grid-template-columns:1fr!important}
+      .table-grid{grid-template-columns:1fr 1fr auto!important}
+    }
   `}</style>
 );
 
@@ -162,7 +210,7 @@ const Btn = ({ children, onClick, disabled, full, sm, variant = "primary", t }) 
   }[variant];
   return (
     <button onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)} onClick={onClick} disabled={disabled}
-      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: s.bg, color: s.color, border: s.border || "none", borderRadius: sm ? 8 : 12, padding: sm ? "6px 14px" : "12px 22px", fontSize: sm ? 13 : 15, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, transition: "all 0.15s", width: full ? "100%" : "auto", whiteSpace: "nowrap" }}>
+      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, background: s.bg, color: s.color, border: s.border || "none", borderRadius: sm ? 8 : 12, padding: sm ? "6px 14px" : "12px 22px", fontSize: sm ? 13 : 15, fontWeight: 500, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)", width: full ? "100%" : "auto", whiteSpace: "nowrap", transform: hov && !disabled ? "scale(1.01)" : "none", WebkitTapHighlightColor: "transparent" }}>
       {children}
     </button>
   );
@@ -207,7 +255,7 @@ const Card = ({ children, t, style: sx, onClick, hover }) => {
   const [hov, setHov] = useState(false);
   return (
     <div onClick={onClick} onMouseEnter={() => hover && setHov(true)} onMouseLeave={() => hover && setHov(false)}
-      style={{ background: t.card, border: `1px solid ${t.cardBdr}`, borderRadius: 18, boxShadow: hov ? t.shadowLg : t.shadow, transition: "box-shadow 0.2s,transform 0.2s", transform: hov ? "translateY(-2px)" : "none", cursor: onClick ? "pointer" : "default", ...sx }}>
+      style={{ background: t.card, border: `1px solid ${t.cardBdr}`, borderRadius: 18, boxShadow: hov ? t.shadowLg : t.shadow, transition: "box-shadow 0.25s cubic-bezier(0.4,0,0.2,1),transform 0.25s cubic-bezier(0.4,0,0.2,1),border-color 0.25s", transform: hov ? "translateY(-2px)" : "none", cursor: onClick ? "pointer" : "default", ...sx }}>
       {children}
     </div>
   );
@@ -355,6 +403,19 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
   const [showCtrl,   setShowCtrl]   = useState(true);
   const [done,       setDone]       = useState(false);
   const [loading,    setLoading]    = useState(true);
+  const [signedUrl,  setSignedUrl]  = useState(null);
+
+  // Fetch signed URL on mount
+  useEffect(() => {
+    if (lesson.video_url) {
+      getSignedVideoUrl(lesson.video_url).then(url => {
+        setSignedUrl(url);
+        setLoading(false);
+      });
+    } else {
+      setLoading(false);
+    }
+  }, [lesson.video_url]);
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -500,7 +561,7 @@ function VideoPlayer({ lesson, userEmail, onClose, onComplete, t }) {
 
       {/* Video element */}
       {lesson.video_url ? (
-        <video ref={videoRef} src={lesson.video_url}
+        <video ref={videoRef} src={signedUrl || lesson.video_url}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
           onClick={e => { e.stopPropagation(); togglePlay(); }}
           playsInline />
@@ -943,7 +1004,7 @@ function CourseBuilder({ courses, setCourses, notify, t }) {
   };
 
   return (
-    <div style={{ animation: "fade 0.3s ease" }}>
+    <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Course Builder</h1>
@@ -1220,21 +1281,22 @@ function Admin({ me, onLogout, t }) {
       })()}
 
       {/* Sidebar */}
-      <div style={{ width: 220, background: t.card, borderRight: `1px solid ${t.sep}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
-        <div style={{ padding: "24px 18px 20px", borderBottom: `1px solid ${t.sep}` }}>
+      <div className="admin-sidebar" style={{ width: 220, background: t.card, borderRight: `1px solid ${t.sep}`, display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh", flexShrink: 0 }}>
+        <div className="sidebar-logo" style={{ padding: "24px 18px 20px", borderBottom: `1px solid ${t.sep}` }}>
           <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
           <div style={{ fontSize: 12, color: t.sub, marginTop: 4 }}>Admin</div>
         </div>
         <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
           {navTabs.map(n => (
             <button key={n.id} onClick={() => setTab(n.id)}
-              style={{ background: tab === n.id ? t.bg2 : "transparent", border: "none", borderRadius: 10, padding: "10px 12px", color: tab === n.id ? t.text : t.sub, fontSize: 14, fontWeight: tab === n.id ? 500 : 400, textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all 0.15s" }}>
-              {n.label}
+              className={`admin-nav-btn${tab === n.id ? " active" : ""}`}
+              style={{ background: tab === n.id ? t.bg2 : "transparent", border: "none", borderRadius: 10, padding: "10px 12px", color: tab === n.id ? t.text : t.sub, fontSize: 14, fontWeight: tab === n.id ? 500 : 400, textAlign: "left", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)", "--blue": t.blue }}>
+              <span style={{ fontSize: "inherit" }}>{n.label}</span>
               {n.badge > 0 && <Tag color={t.orange} t={t}>{n.badge}</Tag>}
             </button>
           ))}
         </nav>
-        <div style={{ padding: "12px 8px", borderTop: `1px solid ${t.sep}` }}>
+        <div className="sidebar-footer" style={{ padding: "12px 8px", borderTop: `1px solid ${t.sep}` }}>
           <div style={{ padding: "10px 12px", background: t.bg2, borderRadius: 10, marginBottom: 6 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: t.text }}>{me.name}</div>
             <div style={{ fontSize: 11, color: t.sub }}>Administrator</div>
@@ -1244,13 +1306,13 @@ function Admin({ me, onLogout, t }) {
       </div>
 
       {/* Main content */}
-      <div style={{ flex: 1, overflow: "auto", padding: "36px 40px" }}>
+      <div className="admin-main" style={{ flex: 1, overflow: "auto", padding: "36px 40px" }}>
 
         {tab === "overview" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Overview</h1>
             <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Your platform at a glance.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
+            <div className="stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
               <Stat label="Total students" value={students.length} t={t} i={0} />
               <Stat label="Active" value={active.length} t={t} i={1} />
               <Stat label="Courses" value={courses.length} t={t} i={2} />
@@ -1295,7 +1357,7 @@ function Admin({ me, onLogout, t }) {
         )}
 
         {tab === "students" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
               <div>
                 <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Students</h1>
@@ -1335,7 +1397,7 @@ function Admin({ me, onLogout, t }) {
         )}
 
         {tab === "courses" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Courses</h1>
             <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>{courses.length} published</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1386,7 +1448,7 @@ function Admin({ me, onLogout, t }) {
         )}
 
         {tab === "videos" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Videos</h1>
             <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Upload lecture videos to each lesson.</div>
             {courses.map(c => {
@@ -1424,7 +1486,7 @@ function Admin({ me, onLogout, t }) {
         )}
 
         {tab === "codes" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Access Codes</h1>
             <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Generate and share codes after payment.</div>
             <Card t={t} style={{ padding: 24, marginBottom: 16 }}>
@@ -1497,9 +1559,9 @@ function Admin({ me, onLogout, t }) {
         )}
 
         {tab === "analytics" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 28 }}>Analytics</h1>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div className="card-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <Card t={t} style={{ padding: "22px 24px" }}>
                 <div style={{ fontSize: 15, fontWeight: 500, color: t.text, marginBottom: 22 }}>Course completion</div>
                 {courses.map(c => {
@@ -1598,7 +1660,7 @@ function StudentView({ me: initMe, onLogout, t }) {
       )}
 
       {/* Nav */}
-      <div style={{ position: "sticky", top: 0, zIndex: 100, background: t.bg + "e8", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderBottom: `1px solid ${t.sep}` }}>
+      <div className="student-nav" style={{ position: "sticky", top: 0, zIndex: 100, background: t.bg + "e8", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderBottom: `1px solid ${t.sep}` }}>
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", height: 52 }}>
           <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase", flexShrink: 0 }}>AWAD</div>
           <div style={{ flex: 1, display: "flex", justifyContent: "center" }}>
@@ -1616,12 +1678,12 @@ function StudentView({ me: initMe, onLogout, t }) {
 
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "36px 24px 80px" }}>
         {tab === "home" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <div style={{ marginBottom: 32 }}>
               <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Hello, {me.name?.split(" ")[0]}.</h1>
               <div style={{ fontSize: 15, color: t.sub }}>Continue learning where you left off.</div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 28 }}>
+            <div className="stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 28 }}>
               <Stat label="Lectures completed" value={totalW} t={t} i={0} />
               <Stat label="Overall progress" value={`${overallPct}%`} t={t} i={1} />
               <Stat label="Courses enrolled" value={mine.length} t={t} i={2} />
@@ -1634,7 +1696,7 @@ function StudentView({ me: initMe, onLogout, t }) {
                 <Btn onClick={() => setRedeem(true)} t={t}>Enter Access Code</Btn>
               </Card>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="card-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 {mine.map(c => {
                   const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
                   const w = (me.progress || {})[c.id]?.watched || [];
@@ -1661,7 +1723,7 @@ function StudentView({ me: initMe, onLogout, t }) {
         )}
 
         {tab === "courses" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
               <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em" }}>My Courses</h1>
               <Btn variant="secondary" onClick={() => setRedeem(true)} t={t}>+ Enter Code</Btn>
@@ -1742,7 +1804,7 @@ function StudentView({ me: initMe, onLogout, t }) {
         )}
 
         {tab === "progress" && (
-          <div style={{ animation: "fade 0.3s ease" }}>
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 28 }}>Progress</h1>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {mine.map(c => {
