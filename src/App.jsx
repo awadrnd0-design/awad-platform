@@ -1876,9 +1876,10 @@ function StudentView({ me: initMe, onLogout, t }) {
   };
 
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><Spinner t={t} /></div>;
-  if (player) const savedTime = (me.progress || {})[player.cid]?.times?.[player.lesson.id] || 0;
+  if (player) {
+    const savedTime = (me.progress || {})[player.cid]?.times?.[player.lesson.id] || 0;
     return <VideoPlayer lesson={player.lesson} userName={me.name} userEmail={me.email || me.name} onClose={() => setPlayer(null)} onComplete={() => markWatched(player.cid, player.lesson.id)} resumeFrom={savedTime} onSaveTime={(time) => saveVideoTime(player.cid, player.lesson.id, time)} t={t} />;
-  if (quiz) return <QuizModal quiz={quiz.q} existing={(me.progress || {})[quiz.cid]?.quizScores?.[quiz.q.id]} onSubmit={s => saveQuiz(quiz.cid, quiz.q.id, s)} onClose={() => setQuiz(null)} t={t} />;
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg }}>
