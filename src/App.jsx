@@ -744,14 +744,31 @@ function VideoUploadModal({ lesson, courseId, courses, setCourses, onClose, t })
   const [err, setErr] = useState("");
   const fileRef = useRef();
 
+  const getVideoDuration = (file) => new Promise(resolve => {
+    const vid = document.createElement("video");
+    vid.preload = "metadata";
+    vid.onloadedmetadata = () => {
+      URL.revokeObjectURL(vid.src);
+      const s = Math.floor(vid.duration);
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      resolve(`${m}:${String(sec).padStart(2, "0")}`);
+    };
+    vid.onerror = () => resolve("0:00");
+    vid.src = URL.createObjectURL(file);
+  });
+
   const upload = async () => {
     if (!file) return;
     setErr(""); setUploading(true);
     try {
-      const videoUrl = await uploadToR2(file, setProgress);
+      const [videoUrl, duration] = await Promise.all([
+        uploadToR2(file, setProgress),
+        getVideoDuration(file)
+      ]);
       const course = courses.find(c => c.id === courseId);
       const updatedChapters = (course.chapters || []).map(ch => ({
-        ...ch, lessons: (ch.lessons || []).map(l => l.id === lesson.id ? { ...l, video_url: videoUrl } : l)
+        ...ch, lessons: (ch.lessons || []).map(l => l.id === lesson.id ? { ...l, video_url: videoUrl, duration } : l)
       }));
       await db.update("courses", courseId, { chapters: updatedChapters });
       setCourses(prev => prev.map(c => c.id === courseId ? { ...c, chapters: updatedChapters } : c));
