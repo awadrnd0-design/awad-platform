@@ -314,35 +314,65 @@ function Splash({ t }) {
 
 // ─── TERMS MODAL ─────────────────────────────────────────────────────
 function TermsModal({ onClose, t }) {
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
-      <Card t={t} style={{ width: "100%", maxWidth: 560, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "scaleIn 0.22s ease" }}>
-        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-          <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Terms & Conditions</div>
-          <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer" }}>✕</button>
-        </div>
-        <div style={{ padding: "22px 24px", overflow: "auto", fontSize: 13, color: t.sub, lineHeight: 1.8 }}>
-          <div style={{ fontSize: 11, color: t.muted, marginBottom: 16 }}>Last updated: {new Date().getFullYear()} · Governed by Egyptian Law</div>
+  const ARTICLES = [
+    ["Article 1 — Acceptance of Terms",
+     "By registering on AWAD Educational Platform, you unconditionally accept these Terms and Conditions in full. These Terms constitute a legally binding agreement between you and AWAD Educational Platform, governed by the laws of the Arab Republic of Egypt, including but not limited to Law No. 175 of 2018 on Combating Information Technology Crimes and Law No. 82 of 2002 on the Protection of Intellectual Property Rights."],
+    ["Article 2 — Account Access & Credentials",
+     "Access to AWAD is granted exclusively to the registered account holder. You are strictly prohibited from sharing, selling, or otherwise transferring your account credentials to any third party. Any breach of this obligation shall result in immediate and permanent account termination without prior notice and without entitlement to any refund."],
+    ["Article 3 — Intellectual Property Rights",
+     "All content published on AWAD — including without limitation video lectures, course materials, assessments, and any associated media — constitutes the exclusive intellectual property of AWAD Educational Platform. This content is fully protected under Egyptian and international intellectual property law. Any unauthorized reproduction, distribution, public display, or commercial exploitation is expressly prohibited and shall be prosecuted to the fullest extent of the law."],
+    ["Article 4 — Prohibited Conduct",
+     "The following acts are strictly and absolutely prohibited: (a) Recording, copying, screenshotting, or capturing any course content by any means; (b) Distributing, uploading, or sharing content on any platform, channel, or medium; (c) Reselling, sublicensing, or commercially exploiting any portion of the platform; (d) Circumventing, disabling, or otherwise undermining any technical protection measure employed by the platform. Violation of any of the above constitutes grounds for civil liability and criminal prosecution under Egyptian law."],
+    ["Article 5 — Digital Watermarking & Identification",
+     "AWAD deploys advanced digital watermarking technology that permanently and uniquely identifies each user within all accessed content. In the event of unauthorized distribution or leakage of any content, this identifying information shall be submitted as legally admissible evidence to the competent authorities without further notice to the user."],
+    ["Article 6 — User Representations & Obligations",
+     "By using this platform, you represent and warrant that: (a) All personal information provided is accurate, complete, and current; (b) You are using the platform solely for your personal, non-commercial educational purposes; (c) You will promptly notify AWAD of any unauthorized access to or use of your account."],
+    ["Article 7 — Termination",
+     "AWAD reserves the absolute and unconditional right to suspend or permanently terminate any account at any time, with or without cause, and without liability to the user. Termination does not waive AWAD's right to pursue any legal remedies arising from prior violations."],
+    ["Article 8 — Governing Law & Jurisdiction",
+     "These Terms shall be exclusively governed by and construed in accordance with the laws of the Arab Republic of Egypt. Any dispute, claim, or controversy arising out of or relating to these Terms shall be subject to the exclusive jurisdiction of the competent Egyptian courts."],
+    ["Article 9 — Amendments",
+     "AWAD reserves the right to modify these Terms at any time without prior notice. Your continued use of the platform following any amendment constitutes your binding acceptance of the revised Terms."],
+  ];
 
-          {[
-            ["1. Acceptance of Terms", "By creating an account on AWAD Educational Platform, you confirm that you have read, understood, and agree to be bound by these Terms and Conditions in accordance with Egyptian Law No. 175 of 2018 on Anti-Cybercrime and applicable consumer protection regulations."],
-            ["2. Platform Access", "Access to course content is granted solely to the registered account holder. Account credentials must not be shared with any third party. AWAD reserves the right to terminate access without notice if this condition is violated."],
-            ["3. Intellectual Property", "All content on AWAD, including but not limited to videos, lectures, materials, and assessments, is the exclusive intellectual property of AWAD Educational Platform and is protected under Egyptian Law No. 82 of 2002 on the Protection of Intellectual Property Rights. Unauthorized reproduction, distribution, or commercial exploitation is strictly prohibited."],
-            ["4. Prohibited Activities", "Users are strictly prohibited from: (a) Recording, copying, or distributing course content in any form; (b) Sharing login credentials or account access; (c) Reselling or commercially exploiting any platform content; (d) Circumventing any technical protection measures. Violations are subject to civil and criminal liability under Egyptian law."],
-            ["5. Content Protection", "AWAD employs technical measures to protect course content, including digital watermarking that identifies each user. In the event of unauthorized distribution, this information may be used as evidence in legal proceedings."],
-            ["6. User Obligations", "Users agree to: (a) Provide accurate and truthful personal information; (b) Use the platform solely for personal educational purposes; (c) Maintain the confidentiality of their account credentials; (d) Notify AWAD immediately of any unauthorized use of their account."],
-            ["7. Termination", "AWAD reserves the right to suspend or permanently terminate any account that violates these Terms, without refund, and to pursue all available legal remedies."],
-            ["8. Governing Law & Jurisdiction", "These Terms are governed by the laws of the Arab Republic of Egypt. Any disputes arising shall be subject to the exclusive jurisdiction of the competent Egyptian courts."],
-            ["9. Amendments", "AWAD reserves the right to amend these Terms at any time. Continued use of the platform following notification of changes constitutes acceptance of the revised Terms."],
-          ].map(([title, text]) => (
-            <div key={title} style={{ marginBottom: 18 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 6 }}>{title}</div>
-              <div>{text}</div>
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(16px)" }}>
+      <Card t={t} style={{ width: "100%", maxWidth: 580, maxHeight: "88vh", display: "flex", flexDirection: "column", animation: "scaleIn 0.22s ease" }}>
+        {/* Header */}
+        <div style={{ padding: "22px 28px", borderBottom: `1px solid ${t.sep}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", color: t.sub, textTransform: "uppercase", marginBottom: 6 }}>AWAD Educational Platform</div>
+              <div style={{ fontSize: 20, fontWeight: 600, color: t.text, letterSpacing: "-0.01em" }}>Terms & Conditions</div>
+              <div style={{ fontSize: 12, color: t.muted, marginTop: 4 }}>Effective {new Date().getFullYear()} · Governed by Egyptian Law</div>
+            </div>
+            <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer", flexShrink: 0, marginLeft: 16 }}>✕</button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "24px 28px", overflow: "auto", flex: 1 }}>
+          <div style={{ fontSize: 13, color: t.sub, lineHeight: 1.7, marginBottom: 24, padding: "12px 16px", background: t.bg2, borderRadius: 10, borderLeft: `3px solid ${t.blue}` }}>
+            Please read these Terms carefully. By proceeding, you acknowledge that you have read, understood, and unconditionally agree to be bound by all provisions set forth herein.
+          </div>
+          {ARTICLES.map(([title, text]) => (
+            <div key={title} style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 7, letterSpacing: "0.01em" }}>{title}</div>
+              <div style={{ fontSize: 13, color: t.sub, lineHeight: 1.8 }}>{text}</div>
             </div>
           ))}
         </div>
-        <div style={{ padding: "16px 24px", borderTop: `1px solid ${t.sep}`, flexShrink: 0 }}>
-          <button onClick={onClose} style={{ background: t.blue, border: "none", borderRadius: 10, padding: "11px 24px", color: "#fff", fontSize: 14, fontWeight: 500, cursor: "pointer", width: "100%" }}>I have read the Terms</button>
+
+        {/* Footer */}
+        <div style={{ padding: "16px 28px", borderTop: `1px solid ${t.sep}`, flexShrink: 0, display: "flex", gap: 10 }}>
+          <button onClick={onClose}
+            style={{ flex: 1, background: t.blue, border: "none", borderRadius: 10, padding: "12px", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", letterSpacing: "0.01em" }}>
+            I Acknowledge and Accept
+          </button>
+          <button onClick={onClose}
+            style={{ background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 10, padding: "12px 18px", color: t.sub, fontSize: 14, cursor: "pointer" }}>
+            Close
+          </button>
         </div>
       </Card>
     </div>
@@ -353,6 +383,7 @@ function TermsModal({ onClose, t }) {
 function NameCollectionScreen({ onComplete, t }) {
   const [firstName, setFirstName] = useState("");
   const [lastName,  setLastName]  = useState("");
+  const [gender,    setGender]    = useState("");
   const [pledge,    setPledge]    = useState(false);
   const [terms,     setTerms]     = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -360,23 +391,34 @@ function NameCollectionScreen({ onComplete, t }) {
   const [loading,   setLoading]   = useState(false);
   const [exiting,   setExiting]   = useState(false);
 
-  const validateName = n => n.trim().length >= 3 && !/^[a-zA-Z؀-ۿ]{1,2}$/.test(n.trim());
+  const validateName = n => {
+    const v = n.trim();
+    if (v.length < 3) return "too short";
+    if (!/^[a-zA-Z]{1,2}$/.test(v) === false) return "abbreviation";
+    if (!/^[a-zA-Z]/.test(v)) return "not english";
+    if (/[^a-zA-Z\s\-']/.test(v)) return "invalid chars";
+    return true;
+  };
 
   const submit = async () => {
     setErr("");
-    if (!validateName(firstName)) return setErr("Please enter a valid first name — minimum 3 characters, no abbreviations.");
-    if (!validateName(lastName))  return setErr("Please enter a valid last name — minimum 3 characters, no abbreviations.");
+    const fn = validateName(firstName);
+    const ln = validateName(lastName);
+    if (fn !== true) return setErr(fn === "not english" || fn === "invalid chars" ? "Names must be written in English only." : "Please enter a valid first name — minimum 3 characters.");
+    if (ln !== true) return setErr(ln === "not english" || ln === "invalid chars" ? "Names must be written in English only." : "Please enter a valid last name — minimum 3 characters.");
+    if (!gender) return setErr("Please select your gender.");
     if (!terms)  return setErr("You must accept the Terms & Conditions before continuing.");
     if (!pledge) return setErr("You must accept the pledge before continuing.");
     setLoading(true);
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
     setExiting(true);
+    window._pendingGender = gender;
     await new Promise(r => setTimeout(r, 520));
     await onComplete(fullName);
     setLoading(false);
   };
 
-  const ready = firstName.trim().length >= 3 && lastName.trim().length >= 3 && pledge && terms;
+  const ready = firstName.trim().length >= 3 && lastName.trim().length >= 3 && gender && pledge && terms;
 
   return (
     <>
@@ -408,6 +450,19 @@ function NameCollectionScreen({ onComplete, t }) {
                   style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "12px 14px", color: t.text, fontSize: 15, width: "100%", transition: "border-color 0.15s" }}
                   onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"}
                   onKeyDown={e => e.key === "Enter" && submit()} />
+              </div>
+
+              {/* Gender */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Gender</label>
+                <div style={{ display: "flex", gap: 10 }}>
+                  {["Male", "Female"].map(g => (
+                    <button key={g} type="button" onClick={() => setGender(g)}
+                      style={{ flex: 1, padding: "11px", borderRadius: 10, background: gender === g ? t.blueBg : t.bg2, border: `1.5px solid ${gender === g ? t.blue : "transparent"}`, color: gender === g ? t.blue : t.sub, fontSize: 14, fontWeight: gender === g ? 500 : 400, cursor: "pointer", transition: "all 0.18s" }}>
+                      {g}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div style={{ fontSize: 12, color: t.sub, background: t.bg2, borderRadius: 8, padding: "9px 12px", lineHeight: 1.5 }}>
@@ -1967,16 +2022,17 @@ function Admin({ me, onLogout, t }) {
               </div>
             </div>
             <Card t={t} style={{ overflow: "hidden" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "12px 20px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
-                {["Name", "Email", "Courses", "Progress", "Status", ""].map(h => <span key={h} style={{ fontSize: 12, fontWeight: 500, color: t.sub }}>{h}</span>)}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr 1fr 1fr auto", padding: "12px 20px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
+                {["Name", "Email", "Gender", "Courses", "Progress", "Status", ""].map(h => <span key={h} style={{ fontSize: 12, fontWeight: 500, color: t.sub }}>{h}</span>)}
               </div>
               {students.map(s => (
-                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "13px 20px", borderBottom: `1px solid ${t.sep}`, alignItems: "center" }}>
+                <div key={s.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr 1fr 1fr auto", padding: "13px 20px", borderBottom: `1px solid ${t.sep}`, alignItems: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <Av name={s.name} size={28} t={t} />
                     <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{s.name}</span>
                   </div>
                   <span style={{ fontSize: 13, color: t.sub, fontFamily: "ui-monospace,monospace" }}>{s.email}</span>
+                  <span style={{ fontSize: 13, color: t.sub }}>{s.gender || "—"}</span>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                     {(s.enrolled_courses || []).map(cid => { const c = courses.find(x => x.id === cid); return c ? <Tag key={cid} color={c.color || t.blue} t={t}>{c.title.split(" ")[0]}</Tag> : null; })}
                     {!s.enrolled_courses?.length && <span style={{ color: t.muted, fontSize: 13 }}>—</span>}
@@ -1989,7 +2045,16 @@ function Admin({ me, onLogout, t }) {
                   <div style={{ display: "flex", gap: 6 }}>
                     <Btn sm variant="secondary" onClick={() => setModal({ type: "detail", s })} t={t}>View</Btn>
                     {s.status === "pending" && <Btn sm onClick={() => setModal({ type: "approve", s })} t={t}>✓</Btn>}
-                    <Btn sm variant="danger" onClick={() => remove(s.id)} t={t}>✕</Btn>
+                    <button
+                      disabled={deleteLocked}
+                      onClick={() => {
+                        if (deleteLocked) return;
+                        if (deleteConfirm) setDeleteTarget(s);
+                        else remove(s.id);
+                      }}
+                      style={{ background: deleteLocked ? t.bg3 : t.redBg, border: `1px solid ${deleteLocked ? "transparent" : t.red + "30"}`, borderRadius: 8, padding: "6px 14px", color: deleteLocked ? t.muted : t.red, fontSize: 13, fontWeight: 500, cursor: deleteLocked ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
+                      ✕
+                    </button>
                   </div>
                 </div>
               ))}
@@ -2699,8 +2764,8 @@ export default function App() {
     if (!needsName) return;
     const { role, user, keep } = needsName;
     try {
-      await db.update("students", user.id, { name: fullName, name_verified: true });
-      const updatedUser = { ...user, name: fullName, name_verified: true };
+      await db.update("students", user.id, { name: fullName, name_verified: true, gender: window._pendingGender || "" });
+      const updatedUser = { ...user, name: fullName, name_verified: true, gender: window._pendingGender || "" };
       setNeedsName(null);
       setSession({ role, user: updatedUser });
       if (keep) saveSession({ role, user: updatedUser });
