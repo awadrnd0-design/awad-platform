@@ -540,8 +540,11 @@ function Auth({ onLogin, t }) {
                       onFocus={e => e.target.style.borderColor = t.blue}
                       onBlur={e => e.target.style.borderColor = "transparent"} />
                     <button type="button" onClick={() => setShowPass(s => !s)}
-                      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: t.sub, cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
-                      {showPass ? "🙈" : "👁️"}
+                      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: t.sub, cursor: "pointer", padding: 4, lineHeight: 1, display: "flex", alignItems: "center" }}>
+                      {showPass
+                        ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      }
                     </button>
                   </div>
                 </div>
@@ -925,17 +928,11 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
         </div>
       )}
 
-      {/* Persistent fullscreen button - always visible */}
-      <button onClick={e => { e.stopPropagation(); toggleFS(); }}
-        style={{ position: "absolute", bottom: 18, right: 16, zIndex: 9, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", borderRadius: 8, color: "#fff", padding: "7px 9px", cursor: "pointer", display: "flex", alignItems: "center" }}>
-        <FSIcon />
-      </button>
-
       {/* Controls overlay */}
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", opacity: showCtrl ? 1 : 0, transition: "opacity 0.3s", pointerEvents: showCtrl ? "auto" : "none", zIndex: 7 }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", zIndex: 7, pointerEvents: "none" }}>
 
-        {/* Top bar */}
-        <div style={{ background: "linear-gradient(to bottom,rgba(0,0,0,0.85) 0%,transparent 100%)", padding: "16px 18px 40px", display: "flex", alignItems: "center", gap: 14 }}>
+        {/* Top bar - fades */}
+        <div style={{ background: "linear-gradient(to bottom,rgba(0,0,0,0.85) 0%,transparent 100%)", padding: "16px 18px 40px", display: "flex", alignItems: "center", gap: 14, opacity: showCtrl ? 1 : 0, transition: "opacity 0.3s", pointerEvents: showCtrl ? "auto" : "none" }}>
           <button onClick={onClose}
             style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", borderRadius: 8, color: "#fff", padding: "7px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
@@ -944,8 +941,8 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
           <span style={{ color: "rgba(255,255,255,0.9)", fontSize: 15, fontWeight: 400, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lesson.title}</span>
         </div>
 
-        {/* Bottom controls */}
-        <div style={{ background: "linear-gradient(to top,rgba(0,0,0,0.95) 0%,transparent 100%)", padding: "40px 18px 16px" }}>
+        {/* Bottom controls - always visible */}
+        <div style={{ background: "linear-gradient(to top,rgba(0,0,0,0.95) 0%,transparent 100%)", padding: "40px 18px 16px", opacity: 1, pointerEvents: "auto" }}>
 
           {/* Seekbar with thumbnail preview */}
           <div style={{ marginBottom: 10, position: "relative", padding: "8px 0" }}>
@@ -1626,6 +1623,15 @@ function Admin({ me, onLogout, t }) {
 
       {modal?.type === "detail" && (() => {
         const s = modal.s;
+        const toggleCourse = async (cid) => {
+          const current = s.enrolled_courses || [];
+          const updated = current.includes(cid) ? current.filter(x => x !== cid) : [...current, cid];
+          await db.update("students", s.id, { enrolled_courses: updated });
+          const updatedS = { ...s, enrolled_courses: updated };
+          setStudents(prev => prev.map(x => x.id === s.id ? updatedS : x));
+          setModal({ type: "detail", s: updatedS });
+          notify(`Course ${current.includes(cid) ? "removed" : "added"}`);
+        };
         return (
           <ModalWrap maxW={560}>
             <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", alignItems: "center", gap: 14 }}>
@@ -1637,7 +1643,8 @@ function Admin({ me, onLogout, t }) {
               <Tag color={s.status === "active" ? t.green : t.orange} t={t}>{s.status}</Tag>
               <button onClick={() => setModal(null)} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer" }}>✕</button>
             </div>
-            <div style={{ padding: "22px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ padding: "22px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Stats */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                 {[["Watched", Object.values(s.progress || {}).flatMap(p => p.watched || []).length], ["Progress", `${pct(s)}%`], ["Joined", s.join_date]].map(([l, v]) => (
                   <div key={l} style={{ background: t.bg2, borderRadius: 12, padding: "14px 16px" }}>
@@ -1646,20 +1653,37 @@ function Admin({ me, onLogout, t }) {
                   </div>
                 ))}
               </div>
-              {courses.filter(c => (s.enrolled_courses || []).includes(c.id)).map(c => {
-                const sp = (s.progress || {})[c.id] || { watched: [] };
-                const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
-                const cp = cl.length ? Math.round(((sp.watched?.length || 0) / cl.length) * 100) : 0;
-                return (
-                  <div key={c.id} style={{ background: t.bg2, borderRadius: 12, padding: "14px 16px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{c.title}</span>
-                      <span style={{ fontSize: 13, color: t.blue }}>{cp}%</span>
-                    </div>
-                    <Track value={cp} color={c.color || t.blue} t={t} />
-                  </div>
-                );
-              })}
+
+              {/* Course enrollment */}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: t.sub, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.04em" }}>Course Access</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {courses.map(c => {
+                    const enrolled = (s.enrolled_courses || []).includes(c.id);
+                    const sp = (s.progress || {})[c.id] || { watched: [] };
+                    const cl = (c.chapters || []).flatMap(ch => ch.lessons || []);
+                    const cp = cl.length ? Math.round(((sp.watched?.length || 0) / cl.length) * 100) : 0;
+                    return (
+                      <div key={c.id} style={{ background: t.bg2, borderRadius: 12, padding: "14px 16px", border: `1.5px solid ${enrolled ? (c.color || t.blue) + "30" : "transparent"}`, transition: "all 0.15s" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: enrolled ? 10 : 0 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: c.color || t.blue, flexShrink: 0 }} />
+                          <span style={{ fontSize: 14, fontWeight: 500, color: t.text, flex: 1 }}>{c.title}</span>
+                          <button onClick={() => toggleCourse(c.id)}
+                            style={{ background: enrolled ? t.redBg : t.blueBg, border: `1px solid ${enrolled ? t.red + "30" : t.blue + "30"}`, borderRadius: 8, padding: "5px 14px", color: enrolled ? t.red : t.blue, fontSize: 13, fontWeight: 500, cursor: "pointer", transition: "all 0.15s" }}>
+                            {enrolled ? "Remove" : "Enroll"}
+                          </button>
+                        </div>
+                        {enrolled && (
+                          <div>
+                            <Track value={cp} color={c.color || t.blue} t={t} />
+                            <div style={{ fontSize: 12, color: t.sub, marginTop: 4 }}>{cp}% complete · {sp.watched?.length || 0}/{cl.length} lectures</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </ModalWrap>
         );
@@ -2319,12 +2343,15 @@ export default function App() {
   const [needsName, setNeedsName] = useState(null); // {role, user, keep}
 
   const handleLogin = (role, user, keep) => {
-    // Check if user needs to provide their name
-    const name = user.name || user.user_metadata?.full_name || "";
-    const hasRealName = name.trim().split(" ").filter(p => p.length >= 3).length >= 2;
-    if (role === "student" && !hasRealName) {
-      setNeedsName({ role, user, keep });
-      return;
+    // Always require name collection for students unless they already have a verified full name
+    if (role === "student") {
+      const name = (user.name || "").trim();
+      const parts = name.split(" ").filter(p => p.length >= 3);
+      const hasVerifiedName = parts.length >= 2 && name.length >= 6 && !name.includes("@");
+      if (!hasVerifiedName) {
+        setNeedsName({ role, user, keep });
+        return;
+      }
     }
     setSession({ role, user });
     if (keep) saveSession({ role, user });
