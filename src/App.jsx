@@ -842,19 +842,20 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
 
       {/* Video */}
       {hasVideo ? (
-        <video ref={videoRef} src={signedUrl || lesson.video_url}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none" }}
-          playsInline crossOrigin="anonymous"
-          controlsList="nodownload nofullscreen noremoteplayback"
-          disablePictureInPicture
-          disableRemotePlayback
-          onContextMenu={e => e.preventDefault()}
-          x-webkit-airplay="deny" />
-        {/* Transparent overlay - blocks Samsung Internet and browser video controls */}
-        <div style={{ position: "absolute", inset: 0, zIndex: 3, background: "transparent" }}
-          onContextMenu={e => e.preventDefault()}
-          onTouchStart={handleVideoTap}
-          onClick={e => { e.stopPropagation(); handleVideoTap(e); }} />
+        <>
+          <video ref={videoRef} src={signedUrl || lesson.video_url}
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none" }}
+            playsInline crossOrigin="anonymous"
+            controlsList="nodownload nofullscreen noremoteplayback"
+            disablePictureInPicture
+            disableRemotePlayback
+            onContextMenu={e => e.preventDefault()}
+            x-webkit-airplay="deny" />
+          <div style={{ position: "absolute", inset: 0, zIndex: 3, background: "transparent" }}
+            onContextMenu={e => e.preventDefault()}
+            onTouchStart={handleVideoTap}
+            onClick={e => { e.stopPropagation(); handleVideoTap(e); }} />
+        </>
       ) : (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
