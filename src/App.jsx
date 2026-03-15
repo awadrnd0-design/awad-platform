@@ -184,6 +184,12 @@ const GS = ({ dark }) => (
     .vid-wrap:hover .vid-ctrl,.vid-wrap:active .vid-ctrl{opacity:1}
     .vid-wrap:fullscreen .vid-ctrl,:fullscreen .vid-ctrl{opacity:1}
     .speed-btn:hover{background:rgba(255,255,255,0.15)!important}
+    /* Block Samsung Internet Smart Video Player overlay */
+    video::-webkit-media-controls{display:none!important}
+    video::-webkit-media-controls-enclosure{display:none!important}
+    video::-webkit-media-controls-panel{display:none!important}
+    video::-webkit-media-controls-play-button{display:none!important}
+    .vid-wrap video{-webkit-touch-callout:none!important;pointer-events:none!important}
     .tab-content{animation:slideIn 0.25s cubic-bezier(0.4,0,0.2,1)}
     .hover-lift{transition:transform 0.2s,box-shadow 0.2s}
     .hover-lift:hover{transform:translateY(-2px)}
@@ -844,6 +850,11 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
           disableRemotePlayback
           onContextMenu={e => e.preventDefault()}
           x-webkit-airplay="deny" />
+        {/* Transparent overlay - blocks Samsung Internet and browser video controls */}
+        <div style={{ position: "absolute", inset: 0, zIndex: 3, background: "transparent" }}
+          onContextMenu={e => e.preventDefault()}
+          onTouchStart={handleVideoTap}
+          onClick={e => { e.stopPropagation(); handleVideoTap(e); }} />
       ) : (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
@@ -1540,7 +1551,15 @@ function Admin({ me, onLogout, t }) {
   }, []);
 
   const approve = async id => { await db.update("students", id, { status: "active" }); setStudents(s => s.map(x => x.id === id ? { ...x, status: "active" } : x)); notify("Approved"); };
-  const remove  = async id => { await db.del("students", id); setStudents(s => s.filter(x => x.id !== id)); notify("Removed", false); };
+  const remove = async id => {
+    await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete_student", userId: id })
+    });
+    setStudents(s => s.filter(x => x.id !== id));
+    notify("Student deleted", false);
+  };
   const invite  = async () => {
     if (!ns.name || !ns.email || !ns.password) return;
     const r = await db.insert("students", { name: ns.name, email: ns.email, password: ns.password, status: "active", enrolled_courses: ns.courses, join_date: new Date().toISOString().slice(0, 10), progress: {} });
@@ -2343,15 +2362,10 @@ export default function App() {
   const [needsName, setNeedsName] = useState(null); // {role, user, keep}
 
   const handleLogin = (role, user, keep) => {
-    // Always require name collection for students unless they already have a verified full name
-    if (role === "student") {
-      const name = (user.name || "").trim();
-      const parts = name.split(" ").filter(p => p.length >= 3);
-      const hasVerifiedName = parts.length >= 2 && name.length >= 6 && !name.includes("@");
-      if (!hasVerifiedName) {
-        setNeedsName({ role, user, keep });
-        return;
-      }
+    // Always show name/pledge screen for students who haven't verified their name yet
+    if (role === "student" && !user.name_verified) {
+      setNeedsName({ role, user, keep });
+      return;
     }
     setSession({ role, user });
     if (keep) saveSession({ role, user });
@@ -2360,16 +2374,15 @@ export default function App() {
   const handleNameComplete = async (fullName) => {
     if (!needsName) return;
     const { role, user, keep } = needsName;
-    // Save name to database
     try {
-      await db.update("students", user.id, { name: fullName });
-      const updatedUser = { ...user, name: fullName };
+      await db.update("students", user.id, { name: fullName, name_verified: true });
+      const updatedUser = { ...user, name: fullName, name_verified: true };
       setNeedsName(null);
       setSession({ role, user: updatedUser });
       if (keep) saveSession({ role, user: updatedUser });
     } catch {
       setNeedsName(null);
-      setSession({ role, user: { ...user, name: fullName } });
+      setSession({ role, user: { ...user, name: fullName, name_verified: true } });
     }
   };
 
