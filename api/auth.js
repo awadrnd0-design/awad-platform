@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       password,
       password_hash: hash,
       status: "active",
-      name_verified: false,
+      name_verified: false, // will be set to true after name collection screen
       enrolled_courses: [],
       join_date: new Date().toISOString().slice(0, 10),
       progress: {}
@@ -50,10 +50,10 @@ export default async function handler(req, res) {
     if (!userId) return res.status(400).json({ error: "No userId provided" });
     try {
       await supabase.from("students").delete().eq("id", userId);
-      await supabase.auth.admin.deleteUser(userId);
+      try { await supabase.auth.admin.deleteUser(userId); } catch {}
       return res.status(200).json({ success: true });
-    } catch {
-      return res.status(200).json({ success: true });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
     }
   }
 
