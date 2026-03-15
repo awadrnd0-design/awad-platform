@@ -6,7 +6,7 @@ const supabase = createClient(
   process.env.SB_SERVICE_KEY
 );
 
-export const config = { runtime: "edge" };
+
 
 export default async function handler(req) {
   const { action, email, password, name } = await req.json();
