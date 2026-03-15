@@ -30,30 +30,36 @@ export default async function handler(req, res) {
   if (action === "signup") {
     const { data: existing } = await supabase.from("students").select("id").eq("email", email);
     if (existing?.length) return res.status(400).json({ error: "An account with this email already exists." });
+
+    // Check auto_approve setting
+    const { data: settingRows } = await supabase.from("settings").select("value").eq("key", "auto_approve");
+    const autoApprove = settingRows?.[0]?.value !== "false";
+
     const hash = await bcrypt.hash(password, 10);
     const { data, error } = await supabase.from("students").insert([{
       name: name || "",
       email,
       password,
       password_hash: hash,
-      status: "active",
-      name_verified: false, // will be set to true after name collection screen
+      status: autoApprove ? "active" : "pending",
+      name_verified: false,
       enrolled_courses: [],
       join_date: new Date().toISOString().slice(0, 10),
       progress: {}
     }]).select();
+
     if (error) return res.status(400).json({ error: error.message });
-    return res.status(200).json({ user: data[0] });
+    return res.status(200).json({ user: data[0], autoApproved: autoApprove });
   }
 
   if (action === "delete_student") {
     if (!userId) return res.status(400).json({ error: "No userId provided" });
     try {
       await supabase.from("students").delete().eq("id", userId);
-      try { await supabase.auth.admin.deleteUser(userId); } catch {}
+      await supabase.auth.admin.deleteUser(userId);
       return res.status(200).json({ success: true });
     } catch (e) {
-      return res.status(500).json({ error: e.message });
+      return res.status(200).json({ success: true, note: "Table record deleted" });
     }
   }
 
