@@ -461,7 +461,10 @@ function Auth({ onLogin, t }) {
       await fetch(`${SB_URL}/auth/v1/recover`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: SB_KEY },
-        body: JSON.stringify({ email: forgotEmail })
+        body: JSON.stringify({ 
+          email: forgotEmail,
+          redirect_to: "https://awad-platform.vercel.app"
+        })
       });
       setForgotSent(true);
     } catch {}
@@ -1001,13 +1004,17 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
 
             {/* Back 10s */}
             <button onClick={e => { e.stopPropagation(); skip(-10); }}
-              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 8px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "8px", display: "flex", alignItems: "center", flexShrink: 0, color: "rgba(255,255,255,0.8)", transition: "color 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.color = "#fff"}
+              onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}>
               <BackIcon />
             </button>
 
             {/* Fwd 10s */}
             <button onClick={e => { e.stopPropagation(); skip(10); }}
-              style={{ background: "none", border: "none", cursor: "pointer", padding: "6px 8px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              style={{ background: "none", border: "none", cursor: "pointer", padding: "8px", display: "flex", alignItems: "center", flexShrink: 0, color: "rgba(255,255,255,0.8)", transition: "color 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.color = "#fff"}
+              onMouseLeave={e => e.currentTarget.style.color = "rgba(255,255,255,0.8)"}>
               <FwdIcon />
             </button>
 
@@ -1551,7 +1558,14 @@ function Admin({ me, onLogout, t }) {
       .then(([s, c, cd]) => { setStudents(s || []); setCourses(c || []); setCodes(cd || []); setLoading(false); });
   }, []);
 
-  const approve = async id => { await db.update("students", id, { status: "active" }); setStudents(s => s.map(x => x.id === id ? { ...x, status: "active" } : x)); notify("Approved"); };
+  const approve = async (id, courseIds) => {
+    const update = { status: "active" };
+    if (courseIds?.length) update.enrolled_courses = courseIds;
+    await db.update("students", id, update);
+    setStudents(s => s.map(x => x.id === id ? { ...x, status: "active", ...(courseIds?.length ? { enrolled_courses: courseIds } : {}) } : x));
+    setModal(null);
+    notify("Student approved");
+  };
   const remove = async id => {
     await fetch("/api/auth", {
       method: "POST",
@@ -1616,6 +1630,48 @@ function Admin({ me, onLogout, t }) {
       )}
 
       {modal?.type === "upload" && <VideoUploadModal lesson={modal.lesson} courseId={modal.courseId} courses={courses} setCourses={setCourses} onClose={() => setModal(null)} t={t} />}
+
+      {/* Approve Modal */}
+      {modal?.type === "approve" && (() => {
+        const s = modal.s;
+        const [selCourses, setSelCourses] = useState([]);
+        return (
+          <ModalWrap maxW={460}>
+            <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", alignItems: "center", gap: 14 }}>
+              <Av name={s.name} size={40} t={t} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>{s.name}</div>
+                <div style={{ fontSize: 13, color: t.sub }}>{s.email}</div>
+              </div>
+              <button onClick={() => setModal(null)} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ padding: "22px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ fontSize: 14, color: t.sub }}>Approve this student and optionally enroll them in courses.</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label style={{ fontSize: 13, fontWeight: 500, color: t.sub, textTransform: "uppercase", letterSpacing: "0.04em" }}>Enroll in Courses</label>
+                {courses.map(c => (
+                  <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: selCourses.includes(c.id) ? t.blueBg : t.bg2, border: `1.5px solid ${selCourses.includes(c.id) ? t.blue + "30" : "transparent"}`, borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
+                    onClick={() => setSelCourses(p => p.includes(c.id) ? p.filter(x => x !== c.id) : [...p, c.id])}>
+                    <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${selCourses.includes(c.id) ? t.blue : t.muted}`, background: selCourses.includes(c.id) ? t.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0 }}>
+                      {selCourses.includes(c.id) && <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{c.title}</div>
+                    </div>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: c.color || t.blue }} />
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <Btn onClick={() => { approve(s.id, selCourses); setModal(null); }} full t={t}>
+                  ✓ Approve{selCourses.length > 0 ? ` + ${selCourses.length} course${selCourses.length > 1 ? "s" : ""}` : ""}
+                </Btn>
+                <Btn variant="danger" onClick={() => { remove(s.id); setModal(null); }} t={t}>Decline</Btn>
+              </div>
+            </div>
+          </ModalWrap>
+        );
+      })()}
 
       {modal?.type === "invite" && (
         <ModalWrap>
@@ -1768,7 +1824,7 @@ function Admin({ me, onLogout, t }) {
                       <div style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{s.name}</div>
                       <div style={{ fontSize: 12, color: t.sub }}>{s.email}</div>
                     </div>
-                    <Btn sm onClick={() => approve(s.id)} t={t}>Approve</Btn>
+                    <Btn sm onClick={() => setModal({ type: "approve", s })} t={t}>Approve</Btn>
                     <Btn sm variant="danger" onClick={() => remove(s.id)} t={t}>Decline</Btn>
                   </div>
                 ))}
@@ -1824,7 +1880,7 @@ function Admin({ me, onLogout, t }) {
                   <Tag color={s.status === "active" ? t.green : t.orange} t={t}>{s.status}</Tag>
                   <div style={{ display: "flex", gap: 6 }}>
                     <Btn sm variant="secondary" onClick={() => setModal({ type: "detail", s })} t={t}>View</Btn>
-                    {s.status === "pending" && <Btn sm onClick={() => approve(s.id)} t={t}>✓</Btn>}
+                    {s.status === "pending" && <Btn sm onClick={() => setModal({ type: "approve", s })} t={t}>✓</Btn>}
                     <Btn sm variant="danger" onClick={() => remove(s.id)} t={t}>✕</Btn>
                   </div>
                 </div>
@@ -2040,6 +2096,87 @@ function Admin({ me, onLogout, t }) {
 }
 
 // ─── STUDENT ─────────────────────────────────────────────────────────
+
+// ─── DELETE ACCOUNT BUTTON ───────────────────────────────────────────
+function DeleteAccountBtn({ me, onDeleted, t }) {
+  const [confirm, setConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const deleteAccount = async () => {
+    setLoading(true);
+    try {
+      await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_student", userId: me.id })
+      });
+      clearSession();
+      onDeleted();
+    } catch { setLoading(false); }
+  };
+
+  if (!confirm) return (
+    <Btn variant="danger" onClick={() => setConfirm(true)} t={t}>Delete My Account</Btn>
+  );
+
+  return (
+    <div style={{ background: t.redBg, border: `1px solid ${t.red}25`, borderRadius: 12, padding: "16px" }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: t.red, marginBottom: 8 }}>Are you absolutely sure?</div>
+      <div style={{ fontSize: 13, color: t.sub, marginBottom: 14 }}>This will permanently delete your account and all progress. This cannot be undone.</div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn variant="danger" onClick={deleteAccount} disabled={loading} t={t}>
+          {loading ? <Spinner size={14} color={t.red} /> : "Yes, delete my account"}
+        </Btn>
+        <Btn variant="secondary" onClick={() => setConfirm(false)} t={t}>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── DELETE ACCOUNT BUTTON ───────────────────────────────────────────
+function DeleteAccountButton({ me, onDeleted, t }) {
+  const [confirm, setConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const deleteAccount = async () => {
+    setLoading(true);
+    try {
+      await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_student", userId: me.id })
+      });
+      clearSession();
+      onDeleted();
+    } catch { setLoading(false); }
+  };
+
+  if (!confirm) return (
+    <button onClick={() => setConfirm(true)}
+      style={{ background: t.redBg, border: `1px solid ${t.red}30`, borderRadius: 10, padding: "11px 20px", color: t.red, fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
+      Delete My Account
+    </button>
+  );
+
+  return (
+    <div style={{ background: t.redBg, border: `1px solid ${t.red}30`, borderRadius: 12, padding: "16px" }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: t.red, marginBottom: 8 }}>Are you sure?</div>
+      <div style={{ fontSize: 13, color: t.sub, marginBottom: 14 }}>This will permanently delete your account and all progress.</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={deleteAccount} disabled={loading}
+          style={{ background: t.red, border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer", opacity: loading ? 0.6 : 1 }}>
+          {loading ? "Deleting..." : "Yes, delete"}
+        </button>
+        <button onClick={() => setConfirm(false)}
+          style={{ background: t.bg2, border: "none", borderRadius: 8, padding: "9px 18px", color: t.sub, fontSize: 13, cursor: "pointer" }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function StudentView({ me: initMe, onLogout, t }) {
   const [tab, setTab] = useState("home");
   const [me, setMe] = useState(initMe);
@@ -2080,6 +2217,18 @@ function StudentView({ me: initMe, onLogout, t }) {
     setMe(m => ({ ...m, progress: np }));
   };
 
+  const deleteAccount = async () => {
+    if (!window.confirm("Are you sure you want to permanently delete your account? This cannot be undone.")) return;
+    try {
+      await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_student", userId: me.id })
+      });
+      onLogout();
+    } catch { alert("Something went wrong. Please try again."); }
+  };
+
   const onRedeemSuccess = async courseTitle => {
     setRedeem(false); setRedeemSuccess(courseTitle);
     const updated = await db.get("students", { id: me.id });
@@ -2110,7 +2259,7 @@ function StudentView({ me: initMe, onLogout, t }) {
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px", display: "flex", alignItems: "center", height: 52 }}>
           <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.3em", color: t.text, textTransform: "uppercase", flexShrink: 0 }}>AWAD</div>
           <div className="student-nav-links" style={{ flex: 1, display: "flex", justifyContent: "center" }}>
-            {[["home", "Home"], ["courses", "Courses"], ["progress", "Progress"]].map(([id, lb]) => (
+            {[["home", "Home"], ["courses", "Courses"], ["progress", "Progress"], ["profile", "Profile"]].map(([id, lb]) => (
               <button key={id} onClick={() => setTab(id)} style={{ background: "none", border: "none", padding: "0 14px", height: 52, color: tab === id ? t.text : t.sub, fontSize: 14, fontWeight: tab === id ? 500 : 400, cursor: "pointer", borderBottom: `2px solid ${tab === id ? t.blue : "transparent"}`, transition: "all 0.15s", marginBottom: -1 }}>{lb}</button>
             ))}
           </div>
@@ -2249,6 +2398,34 @@ function StudentView({ me: initMe, onLogout, t }) {
           </div>
         )}
 
+        {tab === "settings" && (
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)", maxWidth: 480 }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Settings</h1>
+            <div style={{ fontSize: 15, color: t.sub, marginBottom: 28 }}>Manage your account.</div>
+
+            {/* Profile info */}
+            <Card t={t} style={{ padding: "22px 24px", marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: t.sub, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 14 }}>Profile</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <Av name={me.name || "?"} size={48} t={t} />
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 500, color: t.text }}>{me.name}</div>
+                  <div style={{ fontSize: 14, color: t.sub }}>{me.email}</div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Danger zone */}
+            <Card t={t} style={{ padding: "22px 24px", border: `1px solid ${t.red}25` }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: t.red, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 14 }}>Danger Zone</div>
+              <div style={{ fontSize: 14, color: t.sub, marginBottom: 16, lineHeight: 1.5 }}>
+                Permanently delete your account and all your progress. This cannot be undone.
+              </div>
+              <DeleteAccountButton me={me} onDeleted={onLogout} t={t} />
+            </Card>
+          </div>
+        )}
+
         {tab === "progress" && (
           <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
             <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 28 }}>Progress</h1>
@@ -2288,6 +2465,45 @@ function StudentView({ me: initMe, onLogout, t }) {
             </div>
           </div>
         )}
+
+        {tab === "profile" && (
+          <div style={{ animation: "slideIn 0.25s cubic-bezier(0.4,0,0.2,1)", maxWidth: 480 }}>
+            <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 28 }}>Profile</h1>
+
+            {/* Account info */}
+            <Card t={t} style={{ padding: "22px 24px", marginBottom: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+                <Av name={me.name} size={52} t={t} />
+                <div>
+                  <div style={{ fontSize: 19, fontWeight: 500, color: t.text }}>{me.name}</div>
+                  <div style={{ fontSize: 14, color: t.sub, marginTop: 3 }}>{me.email}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {[["Joined", me.join_date], ["Courses enrolled", (me.enrolled_courses || []).length], ["Lectures completed", Object.values(me.progress || {}).flatMap(p => p.watched || []).length]].map(([l, v]) => (
+                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${t.sep}` }}>
+                    <span style={{ fontSize: 14, color: t.sub }}>{l}</span>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: t.text }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Danger zone */}
+            <Card t={t} style={{ padding: "22px 24px", border: `1px solid ${t.red}20` }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: t.red, marginBottom: 8 }}>Danger Zone</div>
+              <div style={{ fontSize: 14, color: t.sub, marginBottom: 16, lineHeight: 1.5 }}>
+                Permanently delete your account and all your progress. This action cannot be undone.
+              </div>
+              <button onClick={deleteAccount}
+                style={{ background: t.redBg, border: `1px solid ${t.red}30`, borderRadius: 10, padding: "11px 20px", color: t.red, fontSize: 14, fontWeight: 500, cursor: "pointer", transition: "all 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = t.red; e.currentTarget.style.color = "#fff"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = t.redBg; e.currentTarget.style.color = t.red; }}>
+                Delete my account
+              </button>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2320,21 +2536,20 @@ export default function App() {
               // Find or create student record
               let rows = await db.get("students", { email: authUser.email });
               if (!rows?.length) {
-                // Auto-create account for new Google users
-                const name = authUser.user_metadata?.full_name || authUser.email.split("@")[0];
+                // Auto-create account for new Google users - name_verified = false so pledge screen shows
                 const inserted = await db.insert("students", {
-                  name, email: authUser.email, password: "", status: "active",
-                  enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {}
+                  name: "", email: authUser.email, password: "", status: "active",
+                  enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {},
+                  name_verified: false
                 });
                 rows = inserted;
               }
               if (rows?.[0]) {
-                const s = { role: "student", user: rows[0] };
-                setSession(s);
-                saveSession(s);
                 window.history.replaceState(null, "", window.location.pathname);
                 setSplash(false);
                 setChecking(false);
+                // Use handleLogin so name_verified check runs
+                handleLogin("student", rows[0], true);
                 return;
               }
             }
