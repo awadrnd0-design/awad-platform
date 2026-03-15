@@ -305,16 +305,109 @@ function Splash({ t }) {
 }
 
 // ─── AUTH ────────────────────────────────────────────────────────────
+
+// ─── NAME COLLECTION SCREEN ──────────────────────────────────────────
+function NameCollectionScreen({ onComplete, t }) {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName]   = useState("");
+  const [agreed, setAgreed]       = useState(false);
+  const [err, setErr]             = useState("");
+  const [loading, setLoading]     = useState(false);
+
+  const validateName = (n) => {
+    if (n.trim().length < 3) return false;
+    if (/^[a-zA-Z؀-ۿ]{1,2}$/.test(n.trim())) return false; // abbreviations
+    if (/^[^a-zA-Z؀-ۿ]/.test(n.trim())) return false; // starts with non-letter
+    return true;
+  };
+
+  const submit = async () => {
+    setErr("");
+    if (!validateName(firstName)) return setErr("Please enter a valid first name — no abbreviations or single letters.");
+    if (!validateName(lastName))  return setErr("Please enter a valid last name — no abbreviations or single letters.");
+    if (!agreed) return setErr("You must accept the pledge to continue.");
+    setLoading(true);
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    await onComplete(fullName);
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 420, animation: "fadeUp 0.5s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase", marginBottom: 8 }}>AWAD</div>
+          <div style={{ fontSize: 22, fontWeight: 300, color: t.text, marginBottom: 6 }}>One last step</div>
+          <div style={{ fontSize: 14, color: t.sub }}>Enter your full real name to continue.</div>
+        </div>
+
+        <Card t={t} style={{ padding: "28px 24px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+            {/* First name */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>First Name</label>
+              <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="e.g. Ahmed"
+                autoFocus
+                style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.15s" }}
+                onFocus={e => e.target.style.borderColor = t.blue}
+                onBlur={e => e.target.style.borderColor = "transparent"} />
+            </div>
+
+            {/* Last name */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Last Name</label>
+              <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="e.g. Al-Rashidi"
+                style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.15s" }}
+                onFocus={e => e.target.style.borderColor = t.blue}
+                onBlur={e => e.target.style.borderColor = "transparent"}
+                onKeyDown={e => e.key === "Enter" && submit()} />
+            </div>
+
+            <div style={{ fontSize: 12, color: t.sub, background: t.bg2, borderRadius: 8, padding: "10px 12px", lineHeight: 1.5 }}>
+              Your real name will appear on all course videos as part of our content protection system.
+            </div>
+
+            {/* Arabic pledge */}
+            <div style={{ background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "14px 16px" }}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }} onClick={() => setAgreed(a => !a)}>
+                <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${agreed ? t.blue : t.muted}`, background: agreed ? t.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 2 }}>
+                  {agreed && <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>}
+                </div>
+                <span style={{ fontSize: 14, color: t.text, lineHeight: 1.8, direction: "rtl", textAlign: "right", fontFamily: "serif" }}>
+                  أتعهد أمام الله وبضميري أنني لن أقوم بتسريب أي محتوى تعليمي أو مشاركته أو المتاجرة به بأي شكل من الأشكال، وأدرك أن الإخلال بهذا التعهد خيانة للأمانة تستوجب المساءلة أمام الله والقانون.
+                </span>
+              </label>
+            </div>
+
+            {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
+
+            <button onClick={submit} disabled={loading || !firstName || !lastName || !agreed}
+              style={{ background: (!firstName || !lastName || !agreed) ? t.bg3 : t.blue, border: "none", borderRadius: 12, padding: "13px", color: (!firstName || !lastName || !agreed) ? t.sub : "#fff", fontSize: 15, fontWeight: 500, cursor: (!firstName || !lastName || !agreed) ? "not-allowed" : "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              {loading ? <Spinner size={16} color="#fff" /> : "Continue →"}
+            </button>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function Auth({ onLogin, t }) {
   const [mode, setMode] = useState("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [keep, setKeep] = useState(true);
+  const [showPass, setShowPass] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [signupsOpen, setSignupsOpen] = useState(true);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   useEffect(() => {
     db.setting("signups_open").then(v => setSignupsOpen(v !== "false"));
@@ -353,7 +446,51 @@ function Auth({ onLogin, t }) {
     setLoading(false);
   };
 
-  const oauth = () => { window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=${window.location.origin}`; };
+  const oauth = () => { window.location.href = `${SB_URL}/auth/v1/authorize?provider=google&redirect_to=https://awad-platform.vercel.app`; };
+
+  const sendForgot = async () => {
+    if (!forgotEmail) return;
+    setForgotLoading(true);
+    try {
+      await fetch(`${SB_URL}/auth/v1/recover`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SB_KEY },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      setForgotSent(true);
+    } catch {}
+    setForgotLoading(false);
+  };
+
+  if (forgotMode) return (
+    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 380, animation: "fadeUp 0.5s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase" }}>AWAD</div>
+        </div>
+        <Card t={t} style={{ padding: "28px 24px" }}>
+          {forgotSent ? (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ width: 52, height: 52, borderRadius: "50%", background: t.greenBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: t.green }}>✓</div>
+              <div style={{ fontSize: 17, fontWeight: 500, color: t.text, marginBottom: 8 }}>Check your email</div>
+              <div style={{ fontSize: 14, color: t.sub, marginBottom: 22, lineHeight: 1.5 }}>We sent a password reset link to <b>{forgotEmail}</b></div>
+              <Btn variant="secondary" onClick={() => { setForgotMode(false); setForgotSent(false); setForgotEmail(""); }} t={t}>Back to Sign In</Btn>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Reset password</div>
+              <div style={{ fontSize: 14, color: t.sub }}>Enter your email and we'll send you a reset link.</div>
+              <Input label="Email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} type="email" placeholder="you@example.com" t={t} autoFocus />
+              <Btn onClick={sendForgot} disabled={forgotLoading || !forgotEmail} full t={t}>
+                {forgotLoading ? <Spinner size={16} color="#fff" /> : "Send Reset Link"}
+              </Btn>
+              <button onClick={() => setForgotMode(false)} style={{ background: "none", border: "none", color: t.sub, fontSize: 14, cursor: "pointer", textAlign: "center" }}>← Back to Sign In</button>
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
@@ -392,23 +529,32 @@ function Auth({ onLogin, t }) {
                 </div>
                 {mode === "signup" && <Input label="Full Name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" t={t} />}
                 <Input label="Email" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@example.com" t={t} autoFocus={mode === "login"} />
-                <Input label="Password" value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••••" t={t} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Password</label>
+                    {mode === "login" && <button type="button" onClick={() => setForgotMode(true)} style={{ background: "none", border: "none", color: t.blue, fontSize: 13, cursor: "pointer", padding: 0 }}>Forgot password?</button>}
+                  </div>
+                  <div style={{ position: "relative" }}>
+                    <input type={showPass ? "text" : "password"} value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••"
+                      style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 44px 11px 14px", color: t.text, fontSize: 15, width: "100%", transition: "border-color 0.15s" }}
+                      onFocus={e => e.target.style.borderColor = t.blue}
+                      onBlur={e => e.target.style.borderColor = "transparent"} />
+                    <button type="button" onClick={() => setShowPass(s => !s)}
+                      style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: t.sub, cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>
+                      {showPass ? "🙈" : "👁️"}
+                    </button>
+                  </div>
+                </div>
 
                 {/* Keep me signed in */}
-                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                  <input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)} style={{ accentColor: t.blue, width: 15, height: 15 }} />
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", userSelect: "none" }} onClick={() => setKeep(k => !k)}>
+                  <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${keep ? t.blue : t.muted}`, background: keep ? t.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0 }}>
+                    {keep && <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>}
+                  </div>
                   <span style={{ fontSize: 14, color: t.sub }}>Keep me signed in</span>
                 </label>
 
-                {mode === "signup" && (
-                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
-                    <input type="checkbox" id="terms" style={{ accentColor: t.blue, width: 15, height: 15, marginTop: 2, flexShrink: 0 }}
-                      onChange={e => document.getElementById("signup-btn").disabled = !e.target.checked} />
-                    <span style={{ fontSize: 13, color: t.sub, lineHeight: 1.7, direction: "rtl", textAlign: "right", fontFamily: "serif" }}>
-                      أتعهد أمام الله وبضميري أنني لن أقوم بتسريب أي محتوى تعليمي أو مشاركته أو المتاجرة به بأي شكل من الأشكال، وأدرك أن الإخلال بهذا التعهد خيانة للأمانة تستوجب المساءلة أمام الله والقانون.
-                    </span>
-                  </label>
-                )}
+
                 {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
                 <Btn onClick={mode === "login" ? login : signup} disabled={loading} full t={t}>
                   {loading ? <Spinner size={16} color="#fff" /> : mode === "login" ? "Sign In" : "Create Account"}
@@ -692,7 +838,9 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
           playsInline crossOrigin="anonymous"
           controlsList="nodownload nofullscreen noremoteplayback"
           disablePictureInPicture
-          onContextMenu={e => e.preventDefault()} />
+          disableRemotePlayback
+          onContextMenu={e => e.preventDefault()}
+          x-webkit-airplay="deny" />
       ) : (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
@@ -776,6 +924,12 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
           <button onClick={onClose} style={{ background: "#fff", border: "none", borderRadius: 14, padding: "13px 32px", color: "#000", fontSize: 15, fontWeight: 500, cursor: "pointer" }}>Continue</button>
         </div>
       )}
+
+      {/* Persistent fullscreen button - always visible */}
+      <button onClick={e => { e.stopPropagation(); toggleFS(); }}
+        style={{ position: "absolute", bottom: 18, right: 16, zIndex: 9, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", borderRadius: 8, color: "#fff", padding: "7px 9px", cursor: "pointer", display: "flex", alignItems: "center" }}>
+        <FSIcon />
+      </button>
 
       {/* Controls overlay */}
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", opacity: showCtrl ? 1 : 0, transition: "opacity 0.3s", pointerEvents: showCtrl ? "auto" : "none", zIndex: 7 }}>
@@ -2162,9 +2316,34 @@ export default function App() {
     setTimeout(() => setSplash(false), 1400);
   }, []);
 
+  const [needsName, setNeedsName] = useState(null); // {role, user, keep}
+
   const handleLogin = (role, user, keep) => {
+    // Check if user needs to provide their name
+    const name = user.name || user.user_metadata?.full_name || "";
+    const hasRealName = name.trim().split(" ").filter(p => p.length >= 3).length >= 2;
+    if (role === "student" && !hasRealName) {
+      setNeedsName({ role, user, keep });
+      return;
+    }
     setSession({ role, user });
     if (keep) saveSession({ role, user });
+  };
+
+  const handleNameComplete = async (fullName) => {
+    if (!needsName) return;
+    const { role, user, keep } = needsName;
+    // Save name to database
+    try {
+      await db.update("students", user.id, { name: fullName });
+      const updatedUser = { ...user, name: fullName };
+      setNeedsName(null);
+      setSession({ role, user: updatedUser });
+      if (keep) saveSession({ role, user: updatedUser });
+    } catch {
+      setNeedsName(null);
+      setSession({ role, user: { ...user, name: fullName } });
+    }
   };
 
   const handleLogout = () => {
@@ -2177,11 +2356,13 @@ export default function App() {
   return (
     <>
       <GS dark={dark} />
-      {!session
-        ? <Auth onLogin={handleLogin} t={theme} />
-        : session.role === "admin"
-          ? <Admin me={session.user} onLogout={handleLogout} t={theme} />
-          : <StudentView me={session.user} onLogout={handleLogout} t={theme} />
+      {needsName
+        ? <NameCollectionScreen onComplete={handleNameComplete} t={theme} />
+        : !session
+          ? <Auth onLogin={handleLogin} t={theme} />
+          : session.role === "admin"
+            ? <Admin me={session.user} onLogout={handleLogout} t={theme} />
+            : <StudentView me={session.user} onLogout={handleLogout} t={theme} />
       }
     </>
   );
