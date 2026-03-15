@@ -315,87 +315,102 @@ function Splash({ t }) {
 // ─── NAME COLLECTION SCREEN ──────────────────────────────────────────
 function NameCollectionScreen({ onComplete, t }) {
   const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName]   = useState("");
-  const [agreed, setAgreed]       = useState(false);
-  const [err, setErr]             = useState("");
-  const [loading, setLoading]     = useState(false);
+  const [lastName,  setLastName]  = useState("");
+  const [pledge,    setPledge]    = useState(false);
+  const [terms,     setTerms]     = useState(false);
+  const [err,       setErr]       = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [exiting,   setExiting]   = useState(false);
 
-  const validateName = (n) => {
-    if (n.trim().length < 3) return false;
-    if (/^[a-zA-Z؀-ۿ]{1,2}$/.test(n.trim())) return false; // abbreviations
-    if (/^[^a-zA-Z؀-ۿ]/.test(n.trim())) return false; // starts with non-letter
-    return true;
-  };
+  const validateName = n => n.trim().length >= 3 && !/^[a-zA-Z؀-ۿ]{1,2}$/.test(n.trim());
 
   const submit = async () => {
     setErr("");
-    if (!validateName(firstName)) return setErr("Please enter a valid first name — no abbreviations or single letters.");
-    if (!validateName(lastName))  return setErr("Please enter a valid last name — no abbreviations or single letters.");
-    if (!agreed) return setErr("You must accept the pledge to continue.");
+    if (!validateName(firstName)) return setErr("Please enter a valid first name — minimum 3 characters, no abbreviations.");
+    if (!validateName(lastName))  return setErr("Please enter a valid last name — minimum 3 characters, no abbreviations.");
+    if (!pledge) return setErr("You must accept the pledge before continuing.");
+    if (!terms)  return setErr("You must accept the Terms & Conditions before continuing.");
     setLoading(true);
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    // Smooth exit transition
+    setExiting(true);
+    await new Promise(r => setTimeout(r, 500));
     await onComplete(fullName);
     setLoading(false);
   };
 
+  const ready = firstName && lastName && pledge && terms;
+
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 420, animation: "fadeUp 0.5s ease" }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase", marginBottom: 8 }}>AWAD</div>
-          <div style={{ fontSize: 22, fontWeight: 300, color: t.text, marginBottom: 6 }}>One last step</div>
-          <div style={{ fontSize: 14, color: t.sub }}>Enter your full real name to continue.</div>
-        </div>
-
-        <Card t={t} style={{ padding: "28px 24px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-            {/* First name */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>First Name</label>
-              <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="e.g. Ahmed"
-                autoFocus
-                style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.15s" }}
-                onFocus={e => e.target.style.borderColor = t.blue}
-                onBlur={e => e.target.style.borderColor = "transparent"} />
-            </div>
-
-            {/* Last name */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Last Name</label>
-              <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="e.g. Al-Rashidi"
-                style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.15s" }}
-                onFocus={e => e.target.style.borderColor = t.blue}
-                onBlur={e => e.target.style.borderColor = "transparent"}
-                onKeyDown={e => e.key === "Enter" && submit()} />
-            </div>
-
-            <div style={{ fontSize: 12, color: t.sub, background: t.bg2, borderRadius: 8, padding: "10px 12px", lineHeight: 1.5 }}>
-              Your real name will appear on all course videos as part of our content protection system.
-            </div>
-
-            {/* Arabic pledge */}
-            <div style={{ background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "14px 16px" }}>
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }} onClick={() => setAgreed(a => !a)}>
-                <div style={{ width: 18, height: 18, borderRadius: 5, border: `2px solid ${agreed ? t.blue : t.muted}`, background: agreed ? t.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 2 }}>
-                  {agreed && <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round"/></svg>}
-                </div>
-                <span style={{ fontSize: 14, color: t.text, lineHeight: 1.8, direction: "rtl", textAlign: "right", fontFamily: "serif" }}>
-                  أتعهد أمام الله وبضميري أنني لن أقوم بتسريب أي محتوى تعليمي أو مشاركته أو المتاجرة به بأي شكل من الأشكال، وأدرك أن الإخلال بهذا التعهد خيانة للأمانة تستوجب المساءلة أمام الله والقانون.
-                </span>
-              </label>
-            </div>
-
-            {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
-
-            <button onClick={submit} disabled={loading || !firstName || !lastName || !agreed}
-              style={{ background: (!firstName || !lastName || !agreed) ? t.bg3 : t.blue, border: "none", borderRadius: 12, padding: "13px", color: (!firstName || !lastName || !agreed) ? t.sub : "#fff", fontSize: 15, fontWeight: 500, cursor: (!firstName || !lastName || !agreed) ? "not-allowed" : "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              {loading ? <Spinner size={16} color="#fff" /> : "Continue →"}
-            </button>
+    <>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap');`}</style>
+      <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, opacity: exiting ? 0 : 1, transform: exiting ? "scale(1.03)" : "scale(1)", transition: "opacity 0.5s ease, transform 0.5s ease" }}>
+        <div style={{ width: "100%", maxWidth: 440, animation: "fadeUp 0.5s ease" }}>
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase", marginBottom: 10 }}>AWAD</div>
+            <div style={{ fontSize: 26, fontWeight: 300, color: t.text, marginBottom: 6, letterSpacing: "-0.02em" }}>Almost there</div>
+            <div style={{ fontSize: 14, color: t.sub }}>Enter your full legal name to continue.</div>
           </div>
-        </Card>
+
+          <Card t={t} style={{ padding: "28px 24px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* Names */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>First Name</label>
+                  <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Ahmed" autoFocus
+                    style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15 }}
+                    onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Last Name</label>
+                  <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Al-Rashidi"
+                    style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15 }}
+                    onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"}
+                    onKeyDown={e => e.key === "Enter" && submit()} />
+                </div>
+              </div>
+
+              <div style={{ fontSize: 12, color: t.sub, background: t.bg2, borderRadius: 8, padding: "9px 12px", lineHeight: 1.5 }}>
+                Your name will appear on all course videos as part of our content protection system. Use your real legal name.
+              </div>
+
+              {/* Terms & Conditions */}
+              <div style={{ background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "14px 16px" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => setTerms(v => !v)}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${terms ? t.blue : t.muted}`, background: terms ? t.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 1 }}>
+                    {terms && <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </div>
+                  <span style={{ fontSize: 13, color: t.text, lineHeight: 1.6 }}>
+                    I agree to the <span style={{ color: t.blue, fontWeight: 500 }}>Terms & Conditions</span> of AWAD. Sharing, distributing, or reselling any course content is strictly prohibited and may result in permanent account termination and legal action.
+                  </span>
+                </label>
+              </div>
+
+              {/* Arabic Pledge with tashkeel */}
+              <div style={{ background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "14px 16px" }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => setPledge(v => !v)}>
+                  <span style={{ fontSize: 15, lineHeight: 1.9, direction: "rtl", textAlign: "right", fontFamily: "'Amiri', 'Traditional Arabic', 'Scheherazade New', serif", color: t.text, flex: 1 }}>
+                    أَتَعَهَّدُ أَمَامَ اللهِ وَبِضَمِيرِي أَنَّنِي لَنْ أَقُومَ بِتَسْرِيبِ أَيِّ مُحْتَوىً تَعْلِيمِيٍّ أَوْ مُشَارَكَتِهِ أَوِ الْمُتَاجَرَةِ بِهِ بِأَيِّ شَكْلٍ مِنَ الْأَشْكَالِ، وَأُدْرِكُ أَنَّ الْإِخْلَالَ بِهَذَا التَّعَهُّدِ خِيَانَةٌ لِلْأَمَانَةِ تَسْتَوْجِبُ الْمُسَاءَلَةَ أَمَامَ اللهِ وَالْقَانُونِ.
+                  </span>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${pledge ? t.green : t.muted}`, background: pledge ? t.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 2 }}>
+                    {pledge && <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </div>
+                </label>
+              </div>
+
+              {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
+
+              <button onClick={submit} disabled={loading || !ready}
+                style={{ background: ready ? t.blue : t.bg3, border: "none", borderRadius: 12, padding: "14px", color: ready ? "#fff" : t.muted, fontSize: 15, fontWeight: 500, cursor: ready ? "pointer" : "not-allowed", transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transform: ready && !loading ? "scale(1.01)" : "scale(1)" }}>
+                {loading ? <Spinner size={16} color="#fff" /> : "Enter AWAD →"}
+              </button>
+            </div>
+          </Card>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1550,8 +1565,19 @@ function Admin({ me, onLogout, t }) {
   const [genCount, setGenCount] = useState(1);
   const [generatedCodes, setGeneratedCodes] = useState([]);
   const [copied, setCopied] = useState(null);
+  const [deleteLocked, setDeleteLocked] = useState(true);
+  const [deleteConfirm, setDeleteConfirm] = useState(true); // require confirm before delete
+  const [lockTimer, setLockTimer] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null); // student to confirm delete
 
   const notify = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
+
+  const unlockDelete = () => {
+    setDeleteLocked(false);
+    if (lockTimer) clearTimeout(lockTimer);
+    const t = setTimeout(() => { setDeleteLocked(true); notify("Delete lock re-enabled"); }, 5 * 60 * 1000);
+    setLockTimer(t);
+  };
 
   useEffect(() => {
     Promise.all([db.get("students"), db.get("courses"), db.get("codes")])
@@ -1672,6 +1698,25 @@ function Admin({ me, onLogout, t }) {
           </ModalWrap>
         );
       })()}
+
+      {/* Confirm delete student */}
+      {deleteTarget && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
+          <Card t={t} style={{ width: "100%", maxWidth: 380, animation: "scaleIn 0.22s ease", padding: "28px 24px" }}>
+            <div style={{ fontSize: 17, fontWeight: 600, color: t.text, marginBottom: 8 }}>Delete student?</div>
+            <div style={{ fontSize: 14, color: t.sub, marginBottom: 6 }}>
+              <b style={{ color: t.text }}>{deleteTarget.name}</b>
+            </div>
+            <div style={{ fontSize: 13, color: t.sub, marginBottom: 22, lineHeight: 1.5 }}>
+              This will permanently remove their account and all progress. This cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn onClick={() => { remove(deleteTarget.id); setDeleteTarget(null); }} variant="danger" full t={t}>Delete</Btn>
+              <Btn onClick={() => setDeleteTarget(null)} variant="secondary" t={t}>Cancel</Btn>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {modal?.type === "invite" && (
         <ModalWrap>
@@ -1856,7 +1901,28 @@ function Admin({ me, onLogout, t }) {
                 <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Students</h1>
                 <div style={{ fontSize: 15, color: t.sub }}>{students.length} total · {active.length} active</div>
               </div>
-              <Btn onClick={() => setModal({ type: "invite" })} t={t}>+ Invite</Btn>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {/* Delete settings */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "8px 14px" }}>
+                  {/* Confirm toggle */}
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" }} onClick={() => setDeleteConfirm(v => !v)}>
+                    <div style={{ width: 32, height: 18, borderRadius: 9, background: deleteConfirm ? t.blue : t.bg3, position: "relative", transition: "background 0.2s", flexShrink: 0 }}>
+                      <div style={{ position: "absolute", top: 2, left: deleteConfirm ? 16 : 2, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                    </div>
+                    <span style={{ fontSize: 12, color: t.sub, whiteSpace: "nowrap" }}>Confirm delete</span>
+                  </label>
+                  <div style={{ width: 1, height: 16, background: t.sep }} />
+                  {/* Lock toggle */}
+                  <button onClick={() => deleteLocked ? unlockDelete() : setDeleteLocked(true)}
+                    style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                    <span style={{ fontSize: 16 }}>{deleteLocked ? "🔒" : "🔓"}</span>
+                    <span style={{ fontSize: 12, color: deleteLocked ? t.sub : t.red, whiteSpace: "nowrap" }}>
+                      {deleteLocked ? "Locked" : "Unlocked (5 min)"}
+                    </span>
+                  </button>
+                </div>
+                <Btn onClick={() => setModal({ type: "invite" })} t={t}>+ Invite</Btn>
+              </div>
             </div>
             <Card t={t} style={{ overflow: "hidden" }}>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.5fr 1fr 1fr auto", padding: "12px 20px", borderBottom: `1px solid ${t.sep}`, background: t.bg2 }}>
@@ -2137,9 +2203,11 @@ function DeleteAccountBtn({ me, onDeleted, t }) {
 // ─── DELETE ACCOUNT BUTTON ───────────────────────────────────────────
 function DeleteAccountButton({ me, onDeleted, t }) {
   const [confirm, setConfirm] = useState(false);
+  const [typed, setTyped]     = useState("");
   const [loading, setLoading] = useState(false);
 
   const deleteAccount = async () => {
+    if (typed !== "Delete") return;
     setLoading(true);
     try {
       await fetch("/api/auth", {
@@ -2154,22 +2222,31 @@ function DeleteAccountButton({ me, onDeleted, t }) {
 
   if (!confirm) return (
     <button onClick={() => setConfirm(true)}
-      style={{ background: t.redBg, border: `1px solid ${t.red}30`, borderRadius: 10, padding: "11px 20px", color: t.red, fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
+      style={{ background: t.redBg, border: `1px solid ${t.red}30`, borderRadius: 10, padding: "11px 20px", color: t.red, fontSize: 14, fontWeight: 500, cursor: "pointer", transition: "all 0.2s" }}>
       Delete My Account
     </button>
   );
 
   return (
-    <div style={{ background: t.redBg, border: `1px solid ${t.red}30`, borderRadius: 12, padding: "16px" }}>
-      <div style={{ fontSize: 14, fontWeight: 500, color: t.red, marginBottom: 8 }}>Are you sure?</div>
-      <div style={{ fontSize: 13, color: t.sub, marginBottom: 14 }}>This will permanently delete your account and all progress.</div>
+    <div style={{ animation: "scaleIn 0.2s ease" }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: t.red, marginBottom: 6 }}>⚠ Warning</div>
+      <div style={{ fontSize: 13, color: t.sub, marginBottom: 16, lineHeight: 1.6 }}>
+        This will permanently delete your account and all your progress. This action <b style={{ color: t.text }}>cannot be undone</b>.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+        <label style={{ fontSize: 13, color: t.sub }}>Type <b style={{ color: t.text, fontFamily: "ui-monospace,monospace" }}>Delete</b> to confirm</label>
+        <input value={typed} onChange={e => setTyped(e.target.value)} placeholder="Delete"
+          style={{ background: t.bg2, border: `1.5px solid ${typed === "Delete" ? t.red : "transparent"}`, borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15, transition: "border-color 0.2s" }}
+          onFocus={e => e.target.style.borderColor = typed === "Delete" ? t.red : t.blue}
+          onBlur={e => e.target.style.borderColor = typed === "Delete" ? t.red : "transparent"} />
+      </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={deleteAccount} disabled={loading}
-          style={{ background: t.red, border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer", opacity: loading ? 0.6 : 1 }}>
-          {loading ? "Deleting..." : "Yes, delete"}
+        <button onClick={deleteAccount} disabled={loading || typed !== "Delete"}
+          style={{ background: typed === "Delete" ? t.red : t.bg3, border: "none", borderRadius: 10, padding: "11px 22px", color: typed === "Delete" ? "#fff" : t.muted, fontSize: 14, fontWeight: 500, cursor: typed === "Delete" ? "pointer" : "not-allowed", transition: "all 0.2s" }}>
+          {loading ? "Deleting…" : "Confirm Delete"}
         </button>
-        <button onClick={() => setConfirm(false)}
-          style={{ background: t.bg2, border: "none", borderRadius: 8, padding: "9px 18px", color: t.sub, fontSize: 13, cursor: "pointer" }}>
+        <button onClick={() => { setConfirm(false); setTyped(""); }}
+          style={{ background: t.bg2, border: "none", borderRadius: 10, padding: "11px 18px", color: t.sub, fontSize: 14, cursor: "pointer" }}>
           Cancel
         </button>
       </div>
@@ -2415,12 +2492,9 @@ function StudentView({ me: initMe, onLogout, t }) {
               </div>
             </Card>
 
-            {/* Danger zone */}
+            {/* Delete account */}
             <Card t={t} style={{ padding: "22px 24px", border: `1px solid ${t.red}25` }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: t.red, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 14 }}>Danger Zone</div>
-              <div style={{ fontSize: 14, color: t.sub, marginBottom: 16, lineHeight: 1.5 }}>
-                Permanently delete your account and all your progress. This cannot be undone.
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: t.red, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 14 }}>Account Deletion</div>
               <DeleteAccountButton me={me} onDeleted={onLogout} t={t} />
             </Card>
           </div>
