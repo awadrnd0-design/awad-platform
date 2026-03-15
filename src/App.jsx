@@ -805,6 +805,24 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
     return () => { document.removeEventListener("fullscreenchange", onFS); document.removeEventListener("webkitfullscreenchange", onFS); };
   }, []);
 
+  // Block Samsung Internet Smart Video Player - pause and hide when page loses visibility
+  useEffect(() => {
+    const onHide = () => {
+      const v = videoRef.current;
+      if (v && !v.paused) { v.pause(); setPlaying(false); }
+    };
+    const onBlur = () => {
+      // Short delay to detect if it was Samsung's player that took over
+      setTimeout(() => {
+        const v = videoRef.current;
+        if (v && !v.paused && document.hidden) { v.pause(); setPlaying(false); }
+      }, 300);
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("blur", onBlur);
+    return () => { document.removeEventListener("visibilitychange", onHide); window.removeEventListener("blur", onBlur); };
+  }, []);
+
   useEffect(() => {
     const onKey = e => {
       const v = videoRef.current;
@@ -1009,13 +1027,14 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
         </div>
       )}
 
-      {/* User info card — bottom right */}
-      <div style={{ position: "absolute", bottom: 80, right: 16, zIndex: 8, pointerEvents: "none" }}>
-        <div style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "8px 12px" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", fontFamily: "ui-monospace,monospace", lineHeight: 1.6 }}>
-            <div style={{ color: "rgba(255,255,255,0.75)", fontWeight: 600, fontSize: 12 }}>{userName}</div>
-            <div>{userEmail}</div>
-          </div>
+      {/* User info card — fixed inside video controls area, never cropped */}
+      <div style={{ position: "absolute", bottom: 72, left: "50%", transform: "translateX(-50%)", zIndex: 8, pointerEvents: "none", whiteSpace: "nowrap" }}>
+        <div style={{ background: "rgba(0,0,0,0.4)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "5px 12px", display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "rgba(255,255,255,0.3)", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontFamily: "ui-monospace,monospace" }}>
+            <span style={{ color: "rgba(255,255,255,0.65)", fontWeight: 600 }}>{userName}</span>
+            {" · "}{userEmail}
+          </span>
         </div>
       </div>
 
@@ -1667,6 +1686,7 @@ function Admin({ me, onLogout, t }) {
   const [deleteConfirm, setDeleteConfirm] = useState(true);
   const lockTimer = useRef(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [autoApprove, setAutoApprove] = useState(true);
 
   const notify = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
 
@@ -1677,8 +1697,12 @@ function Admin({ me, onLogout, t }) {
   };
 
   useEffect(() => {
-    Promise.all([db.get("students"), db.get("courses"), db.get("codes")])
-      .then(([s, c, cd]) => { setStudents(s || []); setCourses(c || []); setCodes(cd || []); setLoading(false); });
+    Promise.all([db.get("students"), db.get("courses"), db.get("codes"), db.setting("auto_approve")])
+      .then(([s, c, cd, aa]) => {
+        setStudents(s || []); setCourses(c || []); setCodes(cd || []);
+        setAutoApprove(aa !== "false");
+        setLoading(false);
+      });
   }, []);
 
   const approve = async (id, courseIds) => {
@@ -1945,7 +1969,24 @@ function Admin({ me, onLogout, t }) {
                 <h1 style={{ fontSize: 34, fontWeight: 300, color: t.text, letterSpacing: "-0.03em", marginBottom: 6 }}>Overview</h1>
                 <div style={{ fontSize: 15, color: t.sub }}>Your platform at a glance.</div>
               </div>
-              <SignupToggle t={t} />
+              <div style={{ display: "flex", gap: 10 }}>
+                <SignupToggle t={t} />
+                {/* Auto-approve toggle */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "10px 16px" }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: t.text }}>Auto-approve</div>
+                    <div style={{ fontSize: 12, color: autoApprove ? t.green : t.orange, marginTop: 2 }}>{autoApprove ? "On" : "Manual only"}</div>
+                  </div>
+                  <button onClick={async () => {
+                    const next = !autoApprove;
+                    setAutoApprove(next);
+                    await db.setSetting("auto_approve", next ? "true" : "false");
+                  }}
+                    style={{ width: 44, height: 26, borderRadius: 13, background: autoApprove ? t.green : t.bg3, border: "none", cursor: "pointer", position: "relative", transition: "background 0.25s", flexShrink: 0 }}>
+                    <div style={{ position: "absolute", top: 3, left: autoApprove ? 21 : 3, width: 20, height: 20, borderRadius: "50%", background: "#fff", transition: "left 0.25s cubic-bezier(0.4,0,0.2,1)", boxShadow: "0 1px 4px rgba(0,0,0,0.2)" }} />
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 24 }}>
               <Stat label="Total students" value={students.length} t={t} i={0} />
@@ -2710,8 +2751,10 @@ export default function App() {
               let rows = await db.get("students", { email: authUser.email });
               if (!rows?.length) {
                 // Auto-create account for new Google users - name_verified = false so pledge screen shows
+                const aaVal = await db.setting("auto_approve");
+                const autoApprove = aaVal !== "false";
                 const inserted = await db.insert("students", {
-                  name: "", email: authUser.email, password: "", status: "active",
+                  name: "", email: authUser.email, password: "", status: autoApprove ? "active" : "pending",
                   enrolled_courses: [], join_date: new Date().toISOString().slice(0, 10), progress: {},
                   name_verified: false
                 });
