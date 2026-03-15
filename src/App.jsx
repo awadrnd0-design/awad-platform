@@ -432,12 +432,12 @@ function NameCollectionScreen({ onComplete, t }) {
               </div>
 
               {/* Arabic Pledge - reduced tashkeel, dark red */}
-              <div style={{ background: t.bg2, border: `1.5px solid ${pledge ? "#8b1a1a30" : t.sep}`, borderRadius: 12, padding: "14px 16px", transition: "border-color 0.2s" }}>
+              <div style={{ background: t.bg2, border: `1.5px solid ${pledge ? "#c0392b40" : t.sep}`, borderRadius: 12, padding: "14px 16px", transition: "border-color 0.2s" }}>
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => setPledge(v => !v)}>
-                  <span style={{ fontSize: 16, lineHeight: 2, direction: "rtl", textAlign: "right", fontFamily: "'Amiri', 'Traditional Arabic', serif", color: "#8b1a1a", flex: 1 }}>
+                  <span style={{ fontSize: 19, lineHeight: 2.1, direction: "rtl", textAlign: "right", fontFamily: "'Amiri', 'Traditional Arabic', serif", color: "#c0392b", flex: 1 }}>
                     أتعهدُ أمامَ اللهِ وبضميري أنني لن أقومَ بتسريبِ أيِّ محتوىً تعليميٍّ أو مشاركتِه أو المتاجرةِ به، وأُدركُ أنَّ الإخلالَ بهذا التعهدِ خيانةٌ للأمانةِ تستوجبُ المساءلةَ أمامَ اللهِ والقانونِ.
                   </span>
-                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${pledge ? "#8b1a1a" : t.muted}`, background: pledge ? "#8b1a1a" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", flexShrink: 0, marginTop: 4 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${pledge ? "#c0392b" : t.muted}`, background: pledge ? "#c0392b" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", flexShrink: 0, marginTop: 4 }}>
                     {pledge && <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </div>
                 </label>
@@ -1609,17 +1609,16 @@ function Admin({ me, onLogout, t }) {
   const [generatedCodes, setGeneratedCodes] = useState([]);
   const [copied, setCopied] = useState(null);
   const [deleteLocked, setDeleteLocked] = useState(true);
-  const [deleteConfirm, setDeleteConfirm] = useState(true); // require confirm before delete
-  const [lockTimer, setLockTimer] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null); // student to confirm delete
+  const [deleteConfirm, setDeleteConfirm] = useState(true);
+  const lockTimer = useRef(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const notify = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
 
   const unlockDelete = () => {
     setDeleteLocked(false);
-    if (lockTimer) clearTimeout(lockTimer);
-    const t = setTimeout(() => { setDeleteLocked(true); notify("Delete lock re-enabled"); }, 5 * 60 * 1000);
-    setLockTimer(t);
+    if (lockTimer.current) clearTimeout(lockTimer.current);
+    lockTimer.current = setTimeout(() => { setDeleteLocked(true); notify("Delete lock re-enabled"); }, 5 * 60 * 1000);
   };
 
   useEffect(() => {
