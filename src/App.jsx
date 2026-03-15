@@ -400,6 +400,15 @@ function Auth({ onLogin, t }) {
                   <span style={{ fontSize: 14, color: t.sub }}>Keep me signed in</span>
                 </label>
 
+                {mode === "signup" && (
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                    <input type="checkbox" id="terms" style={{ accentColor: t.blue, width: 15, height: 15, marginTop: 2, flexShrink: 0 }}
+                      onChange={e => document.getElementById("signup-btn").disabled = !e.target.checked} />
+                    <span style={{ fontSize: 13, color: t.sub, lineHeight: 1.7, direction: "rtl", textAlign: "right", fontFamily: "serif" }}>
+                      أتعهد أمام الله وبضميري أنني لن أقوم بتسريب أي محتوى تعليمي أو مشاركته أو المتاجرة به بأي شكل من الأشكال، وأدرك أن الإخلال بهذا التعهد خيانة للأمانة تستوجب المساءلة أمام الله والقانون.
+                    </span>
+                  </label>
+                )}
                 {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
                 <Btn onClick={mode === "login" ? login : signup} disabled={loading} full t={t}>
                   {loading ? <Spinner size={16} color="#fff" /> : mode === "login" ? "Sign In" : "Create Account"}
@@ -679,9 +688,11 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
       {/* Video */}
       {hasVideo ? (
         <video ref={videoRef} src={signedUrl || lesson.video_url}
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain" }}
-          onClick={e => { e.stopPropagation(); handleVideoTap(e); }}
-          playsInline crossOrigin="anonymous" />
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none" }}
+          playsInline crossOrigin="anonymous"
+          controlsList="nodownload nofullscreen noremoteplayback"
+          disablePictureInPicture
+          onContextMenu={e => e.preventDefault()} />
       ) : (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)" }}>
