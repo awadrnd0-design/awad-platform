@@ -312,12 +312,50 @@ function Splash({ t }) {
 
 // ─── AUTH ────────────────────────────────────────────────────────────
 
+// ─── TERMS MODAL ─────────────────────────────────────────────────────
+function TermsModal({ onClose, t }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(12px)" }}>
+      <Card t={t} style={{ width: "100%", maxWidth: 560, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "scaleIn 0.22s ease" }}>
+        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${t.sep}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 600, color: t.text }}>Terms & Conditions</div>
+          <button onClick={onClose} style={{ background: t.bg2, border: "none", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: t.sub, fontSize: 14, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ padding: "22px 24px", overflow: "auto", fontSize: 13, color: t.sub, lineHeight: 1.8 }}>
+          <div style={{ fontSize: 11, color: t.muted, marginBottom: 16 }}>Last updated: {new Date().getFullYear()} · Governed by Egyptian Law</div>
+
+          {[
+            ["1. Acceptance of Terms", "By creating an account on AWAD Educational Platform, you confirm that you have read, understood, and agree to be bound by these Terms and Conditions in accordance with Egyptian Law No. 175 of 2018 on Anti-Cybercrime and applicable consumer protection regulations."],
+            ["2. Platform Access", "Access to course content is granted solely to the registered account holder. Account credentials must not be shared with any third party. AWAD reserves the right to terminate access without notice if this condition is violated."],
+            ["3. Intellectual Property", "All content on AWAD, including but not limited to videos, lectures, materials, and assessments, is the exclusive intellectual property of AWAD Educational Platform and is protected under Egyptian Law No. 82 of 2002 on the Protection of Intellectual Property Rights. Unauthorized reproduction, distribution, or commercial exploitation is strictly prohibited."],
+            ["4. Prohibited Activities", "Users are strictly prohibited from: (a) Recording, copying, or distributing course content in any form; (b) Sharing login credentials or account access; (c) Reselling or commercially exploiting any platform content; (d) Circumventing any technical protection measures. Violations are subject to civil and criminal liability under Egyptian law."],
+            ["5. Content Protection", "AWAD employs technical measures to protect course content, including digital watermarking that identifies each user. In the event of unauthorized distribution, this information may be used as evidence in legal proceedings."],
+            ["6. User Obligations", "Users agree to: (a) Provide accurate and truthful personal information; (b) Use the platform solely for personal educational purposes; (c) Maintain the confidentiality of their account credentials; (d) Notify AWAD immediately of any unauthorized use of their account."],
+            ["7. Termination", "AWAD reserves the right to suspend or permanently terminate any account that violates these Terms, without refund, and to pursue all available legal remedies."],
+            ["8. Governing Law & Jurisdiction", "These Terms are governed by the laws of the Arab Republic of Egypt. Any disputes arising shall be subject to the exclusive jurisdiction of the competent Egyptian courts."],
+            ["9. Amendments", "AWAD reserves the right to amend these Terms at any time. Continued use of the platform following notification of changes constitutes acceptance of the revised Terms."],
+          ].map(([title, text]) => (
+            <div key={title} style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 6 }}>{title}</div>
+              <div>{text}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: "16px 24px", borderTop: `1px solid ${t.sep}`, flexShrink: 0 }}>
+          <button onClick={onClose} style={{ background: t.blue, border: "none", borderRadius: 10, padding: "11px 24px", color: "#fff", fontSize: 14, fontWeight: 500, cursor: "pointer", width: "100%" }}>I have read the Terms</button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ─── NAME COLLECTION SCREEN ──────────────────────────────────────────
 function NameCollectionScreen({ onComplete, t }) {
   const [firstName, setFirstName] = useState("");
   const [lastName,  setLastName]  = useState("");
   const [pledge,    setPledge]    = useState(false);
   const [terms,     setTerms]     = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const [err,       setErr]       = useState("");
   const [loading,   setLoading]   = useState(false);
   const [exiting,   setExiting]   = useState(false);
@@ -328,23 +366,23 @@ function NameCollectionScreen({ onComplete, t }) {
     setErr("");
     if (!validateName(firstName)) return setErr("Please enter a valid first name — minimum 3 characters, no abbreviations.");
     if (!validateName(lastName))  return setErr("Please enter a valid last name — minimum 3 characters, no abbreviations.");
-    if (!pledge) return setErr("You must accept the pledge before continuing.");
     if (!terms)  return setErr("You must accept the Terms & Conditions before continuing.");
+    if (!pledge) return setErr("You must accept the pledge before continuing.");
     setLoading(true);
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
-    // Smooth exit transition
     setExiting(true);
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 520));
     await onComplete(fullName);
     setLoading(false);
   };
 
-  const ready = firstName && lastName && pledge && terms;
+  const ready = firstName.trim().length >= 3 && lastName.trim().length >= 3 && pledge && terms;
 
   return (
     <>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap');`}</style>
-      <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, opacity: exiting ? 0 : 1, transform: exiting ? "scale(1.03)" : "scale(1)", transition: "opacity 0.5s ease, transform 0.5s ease" }}>
+      {showTerms && <TermsModal onClose={() => setShowTerms(false)} t={t} />}
+      <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 20px", opacity: exiting ? 0 : 1, transform: exiting ? "scale(1.04) translateY(-8px)" : "scale(1) translateY(0)", transition: "opacity 0.52s cubic-bezier(0.4,0,0.2,1), transform 0.52s cubic-bezier(0.4,0,0.2,1)" }}>
         <div style={{ width: "100%", maxWidth: 440, animation: "fadeUp 0.5s ease" }}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.35em", color: t.text, textTransform: "uppercase", marginBottom: 10 }}>AWAD</div>
@@ -353,57 +391,62 @@ function NameCollectionScreen({ onComplete, t }) {
           </div>
 
           <Card t={t} style={{ padding: "28px 24px" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-              {/* Names */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>First Name</label>
-                  <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Ahmed" autoFocus
-                    style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15 }}
-                    onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"} />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Last Name</label>
-                  <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Al-Rashidi"
-                    style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "11px 14px", color: t.text, fontSize: 15 }}
-                    onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"}
-                    onKeyDown={e => e.key === "Enter" && submit()} />
-                </div>
+              {/* First name */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>First Name</label>
+                <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="e.g. Ahmed" autoFocus
+                  style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "12px 14px", color: t.text, fontSize: 15, width: "100%", transition: "border-color 0.15s" }}
+                  onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"} />
+              </div>
+
+              {/* Last name */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 13, fontWeight: 500, color: t.sub }}>Last Name</label>
+                <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="e.g. Al-Rashidi"
+                  style={{ background: t.bg2, border: "1.5px solid transparent", borderRadius: 10, padding: "12px 14px", color: t.text, fontSize: 15, width: "100%", transition: "border-color 0.15s" }}
+                  onFocus={e => e.target.style.borderColor = t.blue} onBlur={e => e.target.style.borderColor = "transparent"}
+                  onKeyDown={e => e.key === "Enter" && submit()} />
               </div>
 
               <div style={{ fontSize: 12, color: t.sub, background: t.bg2, borderRadius: 8, padding: "9px 12px", lineHeight: 1.5 }}>
-                Your name will appear on all course videos as part of our content protection system. Use your real legal name.
+                Your name will be embedded in all course videos as part of our content protection system. Use your real legal name.
               </div>
 
               {/* Terms & Conditions */}
-              <div style={{ background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "14px 16px" }}>
+              <div style={{ background: t.bg2, border: `1.5px solid ${terms ? t.blue + "40" : t.sep}`, borderRadius: 12, padding: "14px 16px", transition: "border-color 0.2s" }}>
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => setTerms(v => !v)}>
-                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${terms ? t.blue : t.muted}`, background: terms ? t.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 1 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${terms ? t.blue : t.muted}`, background: terms ? t.blue : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", flexShrink: 0, marginTop: 1 }}>
                     {terms && <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </div>
-                  <span style={{ fontSize: 13, color: t.text, lineHeight: 1.6 }}>
-                    I agree to the <span style={{ color: t.blue, fontWeight: 500 }}>Terms & Conditions</span> of AWAD. Sharing, distributing, or reselling any course content is strictly prohibited and may result in permanent account termination and legal action.
+                  <span style={{ fontSize: 13, color: t.text, lineHeight: 1.65 }}>
+                    I have read and agree to the{" "}
+                    <span onClick={e => { e.stopPropagation(); setShowTerms(true); }}
+                      style={{ color: t.blue, fontWeight: 500, textDecoration: "underline", cursor: "pointer" }}>
+                      Terms & Conditions
+                    </span>
+                    . Sharing or distributing course content is strictly prohibited and subject to legal action under Egyptian law.
                   </span>
                 </label>
               </div>
 
-              {/* Arabic Pledge with tashkeel */}
-              <div style={{ background: t.bg2, border: `1px solid ${t.sep}`, borderRadius: 12, padding: "14px 16px" }}>
+              {/* Arabic Pledge - reduced tashkeel, dark red */}
+              <div style={{ background: t.bg2, border: `1.5px solid ${pledge ? "#8b1a1a30" : t.sep}`, borderRadius: 12, padding: "14px 16px", transition: "border-color 0.2s" }}>
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => setPledge(v => !v)}>
-                  <span style={{ fontSize: 15, lineHeight: 1.9, direction: "rtl", textAlign: "right", fontFamily: "'Amiri', 'Traditional Arabic', 'Scheherazade New', serif", color: t.text, flex: 1 }}>
-                    أَتَعَهَّدُ أَمَامَ اللهِ وَبِضَمِيرِي أَنَّنِي لَنْ أَقُومَ بِتَسْرِيبِ أَيِّ مُحْتَوىً تَعْلِيمِيٍّ أَوْ مُشَارَكَتِهِ أَوِ الْمُتَاجَرَةِ بِهِ بِأَيِّ شَكْلٍ مِنَ الْأَشْكَالِ، وَأُدْرِكُ أَنَّ الْإِخْلَالَ بِهَذَا التَّعَهُّدِ خِيَانَةٌ لِلْأَمَانَةِ تَسْتَوْجِبُ الْمُسَاءَلَةَ أَمَامَ اللهِ وَالْقَانُونِ.
+                  <span style={{ fontSize: 16, lineHeight: 2, direction: "rtl", textAlign: "right", fontFamily: "'Amiri', 'Traditional Arabic', serif", color: "#8b1a1a", flex: 1 }}>
+                    أتعهدُ أمامَ اللهِ وبضميري أنني لن أقومَ بتسريبِ أيِّ محتوىً تعليميٍّ أو مشاركتِه أو المتاجرةِ به، وأُدركُ أنَّ الإخلالَ بهذا التعهدِ خيانةٌ للأمانةِ تستوجبُ المساءلةَ أمامَ اللهِ والقانونِ.
                   </span>
-                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${pledge ? t.green : t.muted}`, background: pledge ? t.green : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 2 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: 6, border: `2px solid ${pledge ? "#8b1a1a" : t.muted}`, background: pledge ? "#8b1a1a" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", flexShrink: 0, marginTop: 4 }}>
                     {pledge && <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                   </div>
                 </label>
               </div>
 
-              {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13 }}>{err}</div>}
+              {err && <div style={{ background: t.redBg, border: `1px solid ${t.red}22`, borderRadius: 8, padding: "10px 14px", color: t.red, fontSize: 13, animation: "fadeUp 0.2s ease" }}>{err}</div>}
 
               <button onClick={submit} disabled={loading || !ready}
-                style={{ background: ready ? t.blue : t.bg3, border: "none", borderRadius: 12, padding: "14px", color: ready ? "#fff" : t.muted, fontSize: 15, fontWeight: 500, cursor: ready ? "pointer" : "not-allowed", transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transform: ready && !loading ? "scale(1.01)" : "scale(1)" }}>
+                style={{ background: ready ? t.blue : t.bg3, border: "none", borderRadius: 12, padding: "14px", color: ready ? "#fff" : t.muted, fontSize: 15, fontWeight: 500, cursor: ready ? "pointer" : "not-allowed", transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                 {loading ? <Spinner size={16} color="#fff" /> : "Enter AWAD →"}
               </button>
             </div>
@@ -2563,18 +2606,10 @@ function StudentView({ me: initMe, onLogout, t }) {
               </div>
             </Card>
 
-            {/* Danger zone */}
+            {/* Account deletion */}
             <Card t={t} style={{ padding: "22px 24px", border: `1px solid ${t.red}20` }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: t.red, marginBottom: 8 }}>Danger Zone</div>
-              <div style={{ fontSize: 14, color: t.sub, marginBottom: 16, lineHeight: 1.5 }}>
-                Permanently delete your account and all your progress. This action cannot be undone.
-              </div>
-              <button onClick={deleteAccount}
-                style={{ background: t.redBg, border: `1px solid ${t.red}30`, borderRadius: 10, padding: "11px 20px", color: t.red, fontSize: 14, fontWeight: 500, cursor: "pointer", transition: "all 0.15s" }}
-                onMouseEnter={e => { e.currentTarget.style.background = t.red; e.currentTarget.style.color = "#fff"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = t.redBg; e.currentTarget.style.color = t.red; }}>
-                Delete my account
-              </button>
+              <div style={{ fontSize: 13, fontWeight: 500, color: t.red, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 14 }}>Account Deletion</div>
+              <DeleteAccountButton me={me} onDeleted={onLogout} t={t} />
             </Card>
           </div>
         )}
