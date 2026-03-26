@@ -1000,7 +1000,7 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
         {[...Array(6)].map((_, i) => (
           <div key={i} style={{ position: "absolute", left: "-20%", right: "-20%", top: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(-15deg) translateY(${i * 140 - 60}px)` }}>
-            <div style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 6, fontWeight: 400, color: "rgba(255,255,255,0.04)", WebkitFontSmoothing: "none", MozOsxFontSmoothing: "unset" }}>
+            <div style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 6, fontWeight: 400, color: "rgba(255,255,255,0.11)", WebkitFontSmoothing: "none", MozOsxFontSmoothing: "unset" }}>
               {[...Array(6)].fill(userEmail).join("     ·     ")}
             </div>
           </div>
