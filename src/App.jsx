@@ -746,8 +746,14 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
     if (lesson.video_url) getSignedVideoUrl(lesson.video_url).then(url => setSignedUrl(url));
   }, [lesson.video_url]);
 
-  // Resume prompt
-  useEffect(() => { if (resumeFrom && resumeFrom > 5) setShowResume(true); }, [resumeFrom]);
+  // Resume prompt - show only once on mount, never again
+  const resumeShown = useRef(false);
+  useEffect(() => {
+    if (resumeFrom && resumeFrom > 5 && !resumeShown.current) {
+      resumeShown.current = true;
+      setShowResume(true);
+    }
+  }, []); // empty deps — runs once only
 
   // Save progress every 10s
   useEffect(() => {
@@ -990,12 +996,12 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
         </div>
       )}
 
-      {/* Watermark */}
+      {/* Watermark — sharp, low opacity, no blur/shadow */}
       <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 2 }}>
-        {[...Array(7)].map((_, i) => (
-          <div key={i} style={{ position: "absolute", left: "-20%", right: "-20%", top: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(-18deg) translateY(${i * 130 - 80}px)` }}>
-            <div style={{ fontSize: 12, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 4, fontWeight: 400, color: "rgba(200,200,200,0.07)", textShadow: "0 1px 3px rgba(0,0,0,0.3)" }}>
-              {[...Array(8)].fill(userEmail).join("   ·   ")}
+        {[...Array(6)].map((_, i) => (
+          <div key={i} style={{ position: "absolute", left: "-20%", right: "-20%", top: 0, display: "flex", alignItems: "center", justifyContent: "center", transform: `rotate(-15deg) translateY(${i * 140 - 60}px)` }}>
+            <div style={{ fontSize: 11, fontFamily: "ui-monospace,monospace", whiteSpace: "nowrap", userSelect: "none", letterSpacing: 6, fontWeight: 400, color: "rgba(255,255,255,0.04)", WebkitFontSmoothing: "none", MozOsxFontSmoothing: "unset" }}>
+              {[...Array(6)].fill(userEmail).join("     ·     ")}
             </div>
           </div>
         ))}
@@ -1069,11 +1075,11 @@ function VideoPlayer({ lesson, userEmail, userName, onClose, onComplete, t, resu
       {/* Thin persistent progress bar */}
       <ThinBar />
 
-      {/* User info - centered, above controls */}
-      <div style={{ position: "absolute", bottom: isMobile ? 70 : 60, left: "50%", transform: "translateX(-50%)", zIndex: 8, pointerEvents: "none", whiteSpace: "nowrap" }}>
-        <div style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "4px 12px" }}>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: "ui-monospace,monospace", letterSpacing: "0.04em" }}>
-            <span style={{ color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>{userName}</span>
+      {/* User info - above seekbar, below video content */}
+      <div style={{ position: "absolute", bottom: isMobile ? 108 : 90, left: "50%", transform: "translateX(-50%)", zIndex: 8, pointerEvents: "none", whiteSpace: "nowrap" }}>
+        <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6, padding: "3px 10px" }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: "ui-monospace,monospace", letterSpacing: "0.04em" }}>
+            <span style={{ color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{userName}</span>
             {" · "}{userEmail}
           </span>
         </div>
